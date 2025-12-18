@@ -1,0 +1,58 @@
+# ------------------------
+# Large datasets / labels
+# ------------------------
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.tif
+*.tiff
+*.webp
+
+*.txt
+*.json
+*.xml
+*.csv
+*.yaml
+*.yml
+
+# YOLO / training artifacts
+runs/
+recordings/
+datasets/
+data/
+images/
+labels/
+
+# Models / engines / weights
+*.pt
+*.onnx
+*.engine
+*.tflite
+*.pth
+*.ckpt
+
+# Videos
+*.mp4
+*.avi
+*.mov
+*.mkv
+
+# Logs / cache
+*.log
+*.cache
+__pycache__/
+*.pyc
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Top-level folders to exclude
+build/
+**/build/
+**/dist/
+**/.venv/
+**/venv/
