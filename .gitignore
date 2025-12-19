@@ -56,4 +56,4 @@ build/
 **/dist/
 **/.venv/
 **/venv/
-amr_project/driver/
+amr_project/driver
