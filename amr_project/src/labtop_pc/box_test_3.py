@@ -184,7 +184,7 @@ def main():
         while True:
             if time.time() - t0 > TIMEOUT_SEC:
                 print("\n[FAIL] Timeout: not enough valid samples.")
-                break
+                return None  # ✅ 실패 시 None 반환
 
             frames = pipeline.wait_for_frames()
             frames = align.process(frames)
@@ -260,11 +260,8 @@ def main():
                 continue
 
             X_m, Y_m = XY_from_pixel_and_Z(cx, cy, intr, Z_use_m)
-
-            # ✅ Y축 부호 반전 (로봇 붙여보니 Y방향이 반대였던 경우)
-            Y_m = -Y_m
-
             Z_m = Z_use_m
+            Y_m = -Y_m
             dist_m = float(np.sqrt(X_m*X_m + Y_m*Y_m + Z_m*Z_m))
             angle = obb_angle_deg_upright0_rightplus(poly)
 
@@ -320,56 +317,68 @@ def main():
             if len(accepted) >= AVG_N:
                 break
 
-        if len(accepted) >= AVG_N:
-            cam_arr = np.array([[a["Xmm"], a["Ymm"], a["Zmm"], a["distmm"], a["angle"],
-                                 a["Zdepth_mm"], a["Zsize_mm"], a["Zuse_mm"]] for a in accepted],
-                               dtype=np.float32)
-            cam_mean = cam_arr.mean(axis=0)
-            cam_std  = cam_arr.std(axis=0)
+        # ✅ 여기부터 성공 케이스
+        cam_arr = np.array([[a["Xmm"], a["Ymm"], a["Zmm"], a["distmm"], a["angle"],
+                             a["Zdepth_mm"], a["Zsize_mm"], a["Zuse_mm"]] for a in accepted],
+                           dtype=np.float32)
+        cam_mean = cam_arr.mean(axis=0)
+        cam_std  = cam_arr.std(axis=0)
 
-            # ✅ gripper 배열/통계도 따로 계산 (mm)
-            g_list = []
-            for a in accepted:
-                gx = a["Xmm"] + OFF_X_MM
-                gy = a["Ymm"] + OFF_Y_MM
-                gz = a["Zmm"] + OFF_Z_MM
-                gdist = float(np.sqrt(gx*gx + gy*gy + gz*gz))
-                g_list.append([gx, gy, gz, gdist])
+        # ✅ gripper 배열/통계도 따로 계산 (mm)
+        g_list = []
+        for a in accepted:
+            gx = a["Xmm"] + OFF_X_MM
+            gy = a["Ymm"] + OFF_Y_MM
+            gz = a["Zmm"] + OFF_Z_MM
+            gdist = float(np.sqrt(gx*gx + gy*gy + gz*gz))
+            g_list.append([gx, gy, gz, gdist])
 
-            g_arr = np.array(g_list, dtype=np.float32)
-            g_mean = g_arr.mean(axis=0)
-            g_std  = g_arr.std(axis=0)
+        g_arr = np.array(g_list, dtype=np.float32)
+        g_mean = g_arr.mean(axis=0)
+        g_std  = g_arr.std(axis=0)
 
-            # ✅ REAL MOVEMENT: 타겟으로 가려면 gripper 좌표의 "반대방향"으로 이동 (mm)
-            move_x_mm = -float(g_mean[0])
-            move_y_mm = -float(g_mean[1])
-            move_z_mm = -float(g_mean[2])
+        # ✅ REAL MOVEMENT: 타겟으로 가려면 gripper 좌표의 "반대방향"으로 이동 (mm)
+        move_x_mm = -float(g_mean[0])
+        move_y_mm = -float(g_mean[1])
+        move_z_mm = -float(g_mean[2])
 
-            print("\n========== RESULT (AVERAGE over 10 valid) ==========")
-            print(f"count : {AVG_N}")
+        print("\n========== RESULT (AVERAGE over 10 valid) ==========")
+        print(f"count : {AVG_N}")
 
-            print(f"\n[CAMERA] (mm)")
-            print(f"XYZ avg (mm)  : ({cam_mean[0]:+.1f}, {cam_mean[1]:+.1f}, {cam_mean[2]:+.1f})   "
-                  f"std=({cam_std[0]:.1f},{cam_std[1]:.1f},{cam_std[2]:.1f})")
-            print(f"dist avg (mm) : {cam_mean[3]:.1f}   std={cam_std[3]:.1f}")
+        print(f"\n[CAMERA] (mm)")
+        print(f"XYZ avg (mm)  : ({cam_mean[0]:+.1f}, {cam_mean[1]:+.1f}, {cam_mean[2]:+.1f})   "
+              f"std=({cam_std[0]:.1f},{cam_std[1]:.1f},{cam_std[2]:.1f})")
+        print(f"dist avg (mm) : {cam_mean[3]:.1f}   std={cam_std[3]:.1f}")
 
-            print(f"\n[GRIPPER]  (offset X{OFF_X_MM:+.1f}, Y{OFF_Y_MM:+.1f}, Z{OFF_Z_MM:+.1f}) (mm)")
-            print(f"XYZ avg (mm)  : ({g_mean[0]:+.1f}, {g_mean[1]:+.1f}, {g_mean[2]:+.1f})   "
-                  f"std=({g_std[0]:.1f},{g_std[1]:.1f},{g_std[2]:.1f})")
-            print(f"dist avg (mm) : {g_mean[3]:.1f}   std={g_mean[3]:.1f}")
+        print(f"\n[GRIPPER]  (offset X{OFF_X_MM:+.1f}, Y{OFF_Y_MM:+.1f}, Z{OFF_Z_MM:+.1f}) (mm)")
+        print(f"XYZ avg (mm)  : ({g_mean[0]:+.1f}, {g_mean[1]:+.1f}, {g_mean[2]:+.1f})   "
+              f"std=({g_std[0]:.1f},{g_std[1]:.1f},{g_std[2]:.1f})")
+        print(f"dist avg (mm) : {g_mean[3]:.1f}   std={g_std[3]:.1f}")
 
-            print(f"\n[REAL MOVEMENT] (to reach target) (mm)")
-            print(f"moveXYZ(mm)   : ({move_x_mm:+.1f}, {move_y_mm:+.1f}, {move_z_mm:+.1f})")
+        print(f"\n[REAL MOVEMENT] (to reach target) (mm)")
+        print(f"moveXYZ(mm)   : ({move_x_mm:+.1f}, {move_y_mm:+.1f}, {move_z_mm:+.1f})")
 
-            print(f"\n[OTHERS]")
-            print(f"angle_avg (deg)       : {cam_mean[4]:+.2f}  std={cam_std[4]:.2f}")
-            print(f"Z avg(depth/size/use) : ({cam_mean[5]:.1f}/{cam_mean[6]:.1f}/{cam_mean[7]:.1f}) mm")
-            print("====================================================\n")
+        print(f"\n[OTHERS]")
+        print(f"angle_avg (deg)       : {cam_mean[4]:+.2f}  std={cam_std[4]:.2f}")
+        print(f"Z avg(depth/size/use) : ({cam_mean[5]:.1f}/{cam_mean[6]:.1f}/{cam_mean[7]:.1f}) mm")
+        print("====================================================\n")
+
+        # ✅✅✅ 여기서 “값을 가져갈 수 있도록” return 추가
+        return {
+            "move_x_mm": move_x_mm,
+            "move_y_mm": move_y_mm,
+            "move_z_mm": move_z_mm,
+            "angle_deg": float(cam_mean[4]),
+
+            # 필요하면 참고용 평균값도 같이 반환
+            "gripper_mean_mm": (float(g_mean[0]), float(g_mean[1]), float(g_mean[2])),
+            "camera_mean_mm":  (float(cam_mean[0]), float(cam_mean[1]), float(cam_mean[2])),
+            "gripper_std_mm":  (float(g_std[0]), float(g_std[1]), float(g_std[2])),
+            "camera_std_mm":   (float(cam_std[0]), float(cam_std[1]), float(cam_std[2])),
+        }
 
     finally:
         pipeline.stop()
 
 if __name__ == "__main__":
-    main()
-
-
+    _ = main()  # 단독 실행 시 출력만 하고 return은 버림
