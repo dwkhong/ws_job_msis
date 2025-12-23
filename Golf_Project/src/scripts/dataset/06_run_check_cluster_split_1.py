@@ -3,19 +3,20 @@
 # -*- coding: utf-8 -*-
 
 from pathlib import Path
+import sys
+# 현재 파일: .../src/scripts/dataset/01_run_copy_dataset.py
+# parents[2] => .../src
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from dataset.check_cluster_split_1 import check_folder
 
 # ================================================================
 # 설정 (여기만 수정하면 됨)
 # ================================================================
-BASE_DIR = Path("/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251107_merge_data")
+BASE_DIR = Path("/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251223_check")
 
 SUBFOLDERS = [
-    "20250721_good_data",
-    "20250725_good_data",
-    "20250904_good_data",
-    "20250929_good_data",
-    "20250930_good_data",
+    "check_1",
+    "check_2",
 ]
 
 # 자동 조합

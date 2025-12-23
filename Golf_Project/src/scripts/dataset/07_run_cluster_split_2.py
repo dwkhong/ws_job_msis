@@ -2,20 +2,21 @@
 # -*- coding: utf-8 -*-
 
 from pathlib import Path
+import sys
+# 현재 파일: .../src/scripts/dataset/01_run_copy_dataset.py
+# parents[2] => .../src
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from dataset.cluster_split_2 import split_by_class_balance
 
 # ======================================================================
 # 🔧 사용자 설정
 # ======================================================================
 
-BASE = Path("/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251107_merge_data")
+BASE = Path("/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251223_check")
 
 FOLDERS = [
-    BASE / "20250721_good_data",
-    BASE / "20250725_good_data",
-    BASE / "20250904_good_data",
-    BASE / "20250929_good_data",
-    BASE / "20250930_good_data",
+    BASE / "check_1",
+    BASE / "check_2",
 ]
 
 # ---- 원하는 클래스 입력 (여기서 수정하면 됨) ----

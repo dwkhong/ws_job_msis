@@ -1,6 +1,10 @@
 # scripts/run_evaluation.py
 # -*- coding: utf-8 -*-
-
+import sys
+from pathlib import Path
+# 현재 파일: .../src/scripts/dataset/01_run_copy_dataset.py
+# parents[2] => .../src
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from evaluation.evaluation_yolo import run_evaluation
 
 if __name__ == "__main__":

@@ -1,6 +1,10 @@
 # run_yolov8_train.py
 # -*- coding: utf-8 -*-
-
+import sys
+from pathlib import Path
+# 현재 파일: .../src/scripts/dataset/01_run_copy_dataset.py
+# parents[2] => .../src
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from training.training_yolo import run_training
 
 # ===============================

@@ -3,16 +3,17 @@
 # -*- coding: utf-8 -*-
 
 from pathlib import Path
+import sys
+# 현재 파일: .../src/scripts/dataset/01_run_copy_dataset.py
+# parents[2] => .../src
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from dataset.report_split_stats import generate_full_report
 
 # === 설정 부분 ===
-ROOT = Path("/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251107_merge_data")
+ROOT = Path("/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251223_check")
 TARGETS = [
-    ROOT / "20250721_good_data",
-    ROOT / "20250725_good_data",
-    ROOT / "20250904_good_data",
-    ROOT / "20250929_good_data",
-    ROOT / "20250930_good_data",
+    ROOT / "check_1",
+    ROOT / "check_2",
 ]
 
 OUTPUT_FILE = ROOT / "split_class_report_after_4567.txt"

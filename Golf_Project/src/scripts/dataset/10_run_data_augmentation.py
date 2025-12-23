@@ -1,5 +1,9 @@
 # run_augment.py
 from pathlib import Path
+import sys
+# 현재 파일: .../src/scripts/dataset/01_run_copy_dataset.py
+# parents[2] => .../src
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from dataset.data_augmentation import augment_dataset
 
 # =========================
@@ -19,7 +23,8 @@ TARGET = {
 }
 
 BASES = [
-    Path("/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251107_merge_data/20250725_good_data")
+    Path("/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251223_check/check_1"),
+    #Path("/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251223_check/check_2")
 ]
 
 # 증강 파라미터도 실행파일에서 조절 가능

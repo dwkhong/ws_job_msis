@@ -1,5 +1,9 @@
 # run_merge.py
 from pathlib import Path
+import sys
+# 현재 파일: .../src/scripts/dataset/01_run_copy_dataset.py
+# parents[2] => .../src
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from dataset.merge_dataset import (
     ensure_dirs, merge_and_move,
     read_and_unify_class_names, write_classes_txt, write_data_yaml,
@@ -9,13 +13,11 @@ from dataset.merge_dataset import (
 # ================================================================
 # 🔧 실행자가 수정하는 설정
 # ================================================================
-MERGE_ROOT = Path("/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251107_merge_data")
+MERGE_ROOT = Path("/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251223_check")
 SOURCES = [
-    MERGE_ROOT / "20250721_good_data",
-    MERGE_ROOT / "20250725_good_data",
-    MERGE_ROOT / "20250904_good_data",
-    MERGE_ROOT / "20250929_good_data",
-    MERGE_ROOT / "20250930_good_data",
+    MERGE_ROOT / "check_1",
+    MERGE_ROOT / "check_2",
+
 ]
 
 # ================================================================
