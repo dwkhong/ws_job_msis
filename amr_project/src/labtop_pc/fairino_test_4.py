@@ -1,3 +1,4 @@
+
 import sys
 import time
 
@@ -66,14 +67,13 @@ def prompt_menu():
     print("=======================================")
     print("무슨 기능을 할까요?")
     print("  1 : box_test_3 측정 실행 -> moveXYZ/angle 저장")
-    print("  2 : GetActualTCPPose(flag=1) -> 현재 tcp_pose 저장 (원본 유지)")
+    print("  2 : GetActualTCPPose(flag=1) -> 현재 tcp_pose 저장/출력")
     print("  3 : (1)+(2) 합쳐서 target_pose 생성(저장/출력)  ※ angle은 적용 안함")
     print(f"  4 : MoveL(현재Pose + moveXYZ*{STEP_SCALE})  ✅ 직선 이동 (LIN)")
-    print(f"  5 : MoveJ(현재Pose + moveXYZ*{STEP_SCALE})  ✅ 관절 이동 (PTP)")
-    print(f"  6 : MoveCart(현재Pose + moveXYZ*{STEP_SCALE}) ✅ 카테시안 PTP")
+    print(f"  5 : MoveCart(현재Pose + moveXYZ*{STEP_SCALE}) ✅ 카테시안 PTP")
     print("  q : 종료")
     print("=======================================")
-    return input("입력 (1/2/3/4/5/6/q) > ").strip()
+    return input("입력 (1/2/3/4/5/q) > ").strip()
 
 
 def main():
@@ -87,7 +87,7 @@ def main():
     tool = 0
     user = 0
     vel = 20.0     # 0~100 (%)
-    acc = 0.0      # 문서상 미오픈인 경우 많음
+    acc = 0.0
     ovl = 100.0
     blendT = -1.0  # blocking
     blendR = -1.0  # blocking
@@ -100,9 +100,7 @@ def main():
         while True:
             cmd = prompt_menu()
 
-            # -------------------------
             # 1) 측정 실행
-            # -------------------------
             if cmd == "1":
                 print("\n[ACTION] box_test_3 측정 시작...")
                 res = measure_main()
@@ -121,9 +119,7 @@ def main():
                 print(f"moveXYZ(mm) = ({mx:+.1f}, {my:+.1f}, {mz:+.1f})")
                 print(f"angle(deg)  = {ang:+.2f}  (saved only, NOT applied)\n")
 
-            # -------------------------
-            # 2) 현재 TCP pose 읽기 (원본 유지)
-            # -------------------------
+            # 2) 현재 TCP pose 읽기
             elif cmd == "2":
                 print("\n[ACTION] GetActualTCPPose(flag=1) 호출...")
                 try:
@@ -136,14 +132,12 @@ def main():
                     print(f"[FAIL] GetActualTCPPose 실패 err={err}, tcp_pose={tcp_pose}\n")
                     continue
 
-                last_tcp_pose = tcp_pose  # 원본 저장
-                print("[OK] 현재 tcp_pose 저장 ✅ (원본)")
+                last_tcp_pose = tcp_pose
+                print("[OK] 현재 tcp_pose ✅")
                 print(fmt_pose6(last_tcp_pose))
                 print()
 
-            # -------------------------
-            # 3) target_pose 생성 (1 + 2) - 원본(100%) 이동량 기준으로 계산/저장
-            # -------------------------
+            # 3) target_pose 생성 (1+2)
             elif cmd == "3":
                 if last_measure is None:
                     print("\n[WARN] 1번(측정)을 먼저 실행해야 함.\n")
@@ -161,9 +155,7 @@ def main():
                 print("target_pose  :", fmt_pose6(last_target_pose))
                 print()
 
-            # -------------------------
-            # 4) MoveL: Cartesian Linear (실행 시 현재 pose 기준 + 1/10 step)
-            # -------------------------
+            # 4) MoveL: LIN (현재 pose + 1/10 step)
             elif cmd == "4":
                 if last_measure is None:
                     print("\n[WARN] 1번(측정)을 먼저 실행해야 함.\n")
@@ -200,63 +192,8 @@ def main():
                 except Exception as e:
                     print(f"[ERROR] MoveL 예외: {e}\n")
 
-            # -------------------------
-            # 5) MoveJ: Joint motion (실행 시 현재 pose 기준 + 1/10 step)
-            # -------------------------
+            # 5) MoveCart: Cartesian PTP (현재 pose + 1/10 step)
             elif cmd == "5":
-                if last_measure is None:
-                    print("\n[WARN] 1번(측정)을 먼저 실행해야 함.\n")
-                    continue
-
-                try:
-                    err, cur_pose = robot.GetActualTCPPose(flag=1)
-                except Exception as e:
-                    print(f"\n[ERROR] GetActualTCPPose 예외: {e}\n")
-                    continue
-
-                if err != 0:
-                    print(f"\n[FAIL] GetActualTCPPose 실패 err={err}, pose={cur_pose}\n")
-                    continue
-
-                desc_pos = build_target_pose(cur_pose, last_measure, scale=STEP_SCALE)
-
-                # 현재 관절각 얻기 (flag=1)
-                try:
-                    ret, j = robot.GetActualJointPosDegree(1)
-                except Exception as e:
-                    print(f"\n[ERROR] GetActualJointPosDegree 예외: {e}\n")
-                    continue
-
-                if ret != 0:
-                    print(f"\n[FAIL] GetActualJointPosDegree 실패 ret={ret}, j={j}\n")
-                    continue
-
-                joint_pos = list(j[:6])
-
-                print("\n[ACTION] MoveJ 실행 (PTP) - 1/10 step ✅")
-                print("current :", fmt_pose6(cur_pose))
-                print("target  :", fmt_pose6(desc_pos))
-                print("joint_pos(current):", [f"{v:.3f}" for v in joint_pos])
-
-                try:
-                    rtn = robot.MoveJ(
-                        joint_pos=joint_pos,
-                        tool=tool,
-                        user=user,
-                        desc_pos=ensure_pose6(desc_pos),  # ✅ IK 힌트/검증용
-                        vel=vel,
-                        acc=acc,
-                        ovl=ovl,
-                        blendT=blendT
-                    )
-                    print(f"[RET] MoveJ errcode: {rtn}\n")
-                except Exception as e:
-                    print(f"[ERROR] MoveJ 예외: {e}\n")
-
-            # -------------------------
-            # 6) MoveCart: Cartesian PTP (실행 시 현재 pose 기준 + 1/10 step)
-            # -------------------------
-            elif cmd == "6":
                 if last_measure is None:
                     print("\n[WARN] 1번(측정)을 먼저 실행해야 함.\n")
                     continue
@@ -291,20 +228,16 @@ def main():
                 except Exception as e:
                     print(f"[ERROR] MoveCart 예외: {e}\n")
 
-            # -------------------------
-            # 종료
-            # -------------------------
             elif cmd.lower() == "q":
                 print("\n[EXIT] 종료합니다.")
                 break
 
             else:
-                print("\n[WARN] 잘못된 입력입니다. 1/2/3/4/5/6/q 중에서 선택하세요.\n")
+                print("\n[WARN] 잘못된 입력입니다. 1/2/3/4/5/q 중에서 선택하세요.\n")
 
             time.sleep(0.1)
 
     finally:
-        # 혹시라도 예외로 튕겨도 연결 종료
         try:
             robot.CloseRPC()
         except Exception:
