@@ -10,6 +10,8 @@ import sys
 # 현재 파일: .../src/scripts/dataset/01_run_copy_dataset.py
 # parents[2] => .../src
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
+from scripts.dataset.settings import BASE_DIR, SRC_LIST   # ✅ 둘 다 가져옴
 from dataset.cluster_split_1 import (
     build_cluster_stats,
     stratified_split,
@@ -19,12 +21,8 @@ from dataset.cluster_split_1 import (
 # ================================================================
 # 사용자 설정
 # ================================================================
-BASE_DIR = Path("/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251223_check")
 
-SUBFOLDERS = [
-    "check_1",
-    "check_2",
-]
+SUBFOLDERS = [p.name for p in SRC_LIST]
 
 FOLDERS = [BASE_DIR / name for name in SUBFOLDERS]
 

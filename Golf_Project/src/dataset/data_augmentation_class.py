@@ -11,22 +11,42 @@ def build_augmentor():
     color_ops = {
         "gamma_bright": A.RandomGamma(gamma_limit=(55, 85), p=1.0),
         "gamma_dark":   A.RandomGamma(gamma_limit=(120, 180), p=1.0),
+
+        # ✅ validation-safe: (min,max) 튜플 + keyword로 명시
         "warm": A.Compose([
             A.ColorJitter(brightness=0.10, contrast=0.15, saturation=0.08, hue=0.015),
-            A.RGBShift(8, -4, -20),
+            A.RGBShift(
+                r_shift_limit=(0, 8),
+                g_shift_limit=(-4, 0),
+                b_shift_limit=(-20, 0),
+                p=1.0,
+            ),
         ]),
+
         "cool": A.Compose([
             A.ColorJitter(brightness=0.08, contrast=0.12, saturation=0.06, hue=0.015),
-            A.RGBShift(-20, -6, 10),
+            A.RGBShift(
+                r_shift_limit=(-20, 0),
+                g_shift_limit=(-6, 0),
+                b_shift_limit=(0, 10),
+                p=1.0,
+            ),
         ]),
+
         "identity": A.NoOp(),
     }
 
-    return A.Compose([
-        A.HorizontalFlip(p=0.25),
-        A.OneOf(list(color_ops.values()), p=1.0)
-    ], bbox_params=A.BboxParams(format="yolo", label_fields=["class_labels"], min_visibility=0.25))
-
+    return A.Compose(
+        [
+            A.HorizontalFlip(p=0.25),
+            A.OneOf(list(color_ops.values()), p=1.0),
+        ],
+        bbox_params=A.BboxParams(
+            format="yolo",
+            label_fields=["class_labels"],
+            min_visibility=0.25,
+        ),
+    )
 
 # ============================================================
 # 🔧 유틸 함수
@@ -104,8 +124,6 @@ def augment_dataset(
     TARGET: dict,
     SEED: int,
     BG_AUG_MULTIPLIER: int,
-    MAX_USES_BASE: int,
-    MAX_USES_BOOST: dict,
     MAX_PER_IMAGE_HARD: int,
     RECENT_COOLDOWN: int,
 ):

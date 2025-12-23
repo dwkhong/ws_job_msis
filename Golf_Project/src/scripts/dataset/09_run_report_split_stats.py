@@ -8,15 +8,13 @@ import sys
 # parents[2] => .../src
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from dataset.report_split_stats import generate_full_report
+from scripts.dataset.settings import BASE_DIR, SRC_LIST
 
 # === 설정 부분 ===
-ROOT = Path("/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251223_check")
-TARGETS = [
-    ROOT / "check_1",
-    ROOT / "check_2",
-]
+ROOT = BASE_DIR
+TARGETS = [ROOT / p.name for p in SRC_LIST]
 
-OUTPUT_FILE = ROOT / "split_class_report_after_4567.txt"
+OUTPUT_FILE = ROOT / "split_class_report_for_augment.txt"
 
 # === 실행 ===
 if __name__ == "__main__":

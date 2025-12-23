@@ -2,8 +2,6 @@
 # -*- coding: utf-8 -*-
 import sys
 from pathlib import Path
-# 현재 파일: .../src/scripts/dataset/01_run_copy_dataset.py
-# parents[2] => .../src
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from training.training_yolo import run_training
 
@@ -11,22 +9,22 @@ from training.training_yolo import run_training
 # 사용자가 수정하는 부분 (단순함)
 # ===============================
 
-DATA_YAML  = "/data/DOCKER_DIRS/eddie/20251107_merge_data/data.yaml"
+DATA_YAML  = "/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251223_check/data.yaml"
 MODEL_NAME = "yolov8s.pt"
-PROJECT_DIR = "/home/eddie/result"
+PROJECT_DIR = "/home/dw/ws_job_msislab/Golf_Project/runs"
 
 IMG_SIZE = 640
-EPOCHS   = 300
+EPOCHS   = 1
 RECT_MODE = False
 
-DATA_TAG = "20251107"
+DATA_TAG = "20251223"
 
 SEEDS    = [25, 33, 57]
-CLS_LIST = [0.5]
+CLS_LIST = [0.5 , 0.7]
 
 OPTIMIZERS = [
     {"name": "SGD",   "lr0": 0.01,  "wd": 0.0005, "momentum": 0.937},
-    {"name": "AdamW", "lr0": 0.001, "wd": 0.01,   "momentum": 0.937},
+    #{"name": "AdamW", "lr0": 0.001, "wd": 0.01,   "momentum": 0.937},
 ]
 
 WEIGHT_SUM4 = {"precision":0.2, "recall":0.3, "map50":0.25, "map5095":0.25}

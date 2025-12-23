@@ -11,12 +11,9 @@ from dataset.check_cluster_split_2 import check_cluster_split
 # ================================================================
 # 🧩 기본 설정
 # ================================================================
-BASE_DIR = Path("/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251223_check")
+from scripts.dataset.settings import BASE_DIR, SRC_LIST   # ✅ 둘 다 가져옴
 
-SUBFOLDERS = [
-    "check_1",
-    "check_2",
-]
+SUBFOLDERS = [p.name for p in SRC_LIST]
 
 FOLDERS = [BASE_DIR / name for name in SUBFOLDERS if (BASE_DIR / name).exists()]
 missing = [name for name in SUBFOLDERS if not (BASE_DIR / name).exists()]

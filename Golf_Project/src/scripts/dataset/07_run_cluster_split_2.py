@@ -7,17 +7,12 @@ import sys
 # parents[2] => .../src
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from dataset.cluster_split_2 import split_by_class_balance
-
+from scripts.dataset.settings import BASE_DIR, SRC_LIST
 # ======================================================================
 # 🔧 사용자 설정
 # ======================================================================
 
-BASE = Path("/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251223_check")
-
-FOLDERS = [
-    BASE / "check_1",
-    BASE / "check_2",
-]
+FOLDERS = [BASE_DIR / p.name for p in SRC_LIST]
 
 # ---- 원하는 클래스 입력 (여기서 수정하면 됨) ----
 TARGET_CLASSES = [4, 5, 6, 7]

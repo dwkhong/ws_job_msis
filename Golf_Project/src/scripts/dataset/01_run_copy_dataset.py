@@ -6,11 +6,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from dataset.copy_dataset import copy_folders
 
-SRC_LIST = [
-    "/home/dw/ws_job_msislab/Golf_Project/data/check_1",
-    "/home/dw/ws_job_msislab/Golf_Project/data/check_2",
-]
+from scripts.dataset.settings import SRC_LIST, DST_ROOT   # ✅ 여기만 수정
 
-DST = "/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251223_check"
+def main():
+    # Path 객체 -> copy_folders는 str도 받으니까 str로 변환해서 전달
+    copy_folders([str(p) for p in SRC_LIST], str(DST_ROOT))
 
-copy_folders(SRC_LIST, DST)
+if __name__ == "__main__":
+    main()

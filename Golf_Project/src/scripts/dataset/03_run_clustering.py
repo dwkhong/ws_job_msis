@@ -3,23 +3,19 @@
 
 from pathlib import Path
 import sys
-# 현재 파일: .../src/scripts/dataset/01_run_copy_dataset.py
+
 # parents[2] => .../src
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 from dataset.clustering import run_clustering
+from scripts.dataset.settings import BASE_DIR, SRC_LIST   # ✅ 둘 다 가져옴
 
 # ================================================================
 # 데이터셋 위치
+#   SUBFOLDERS는 SRC_LIST에서 자동 생성
 # ================================================================
-BASE_DIR = Path("/home/dw/ws_job_msislab/Golf_Project/data/for_study/20251223_check")
-
-SUBFOLDERS = [
-    "check_1",
-    "check_2",
-]
-
+SUBFOLDERS = [p.name for p in SRC_LIST]
 FOLDERS = [BASE_DIR / name for name in SUBFOLDERS]
-
 
 # ================================================================
 # 기본 설정값
@@ -31,18 +27,15 @@ DEFAULT_CFG = {
     "ZNCC_SIZE": 256,
     "MAX_CLUSTER_LEN": 5,
     "DOWNSCALE": False,
-    "PREPROC_MAX_SIDE": 0
+    "PREPROC_MAX_SIDE": 0,
 }
 
 # ================================================================
 # 폴더별 개별 파라미터
+#   키는 폴더명(p.name) 기준으로 매칭됨
 # ================================================================
 FOLDER_CFG = {
-    "20250721_good_data": {"GAMMA": 0.60, "CHANGE_THRESH": 0.32, "MAX_CLUSTER_LEN": 5},
-    "20250725_good_data": {"GAMMA": 0.60, "CHANGE_THRESH": 0.35, "MAX_CLUSTER_LEN": 5},
-    "20250904_good_data": {"GAMMA": 0.55, "CHANGE_THRESH": 0.25, "MAX_CLUSTER_LEN": 25},
-    "20250929_good_data": {"GAMMA": 0.55, "CHANGE_THRESH": 0.25, "MAX_CLUSTER_LEN": 7},
-    "20250930_good_data": {"GAMMA": 0.60, "CHANGE_THRESH": 0.28, "MAX_CLUSTER_LEN": 15},
+    "ex": {"GAMMA": 0.60, "CHANGE_THRESH": 0.32, "MAX_CLUSTER_LEN": 5},
 }
 
 # ================================================================
@@ -50,3 +43,5 @@ FOLDER_CFG = {
 # ================================================================
 if __name__ == "__main__":
     run_clustering(FOLDERS, FOLDER_CFG, DEFAULT_CFG)
+
+
