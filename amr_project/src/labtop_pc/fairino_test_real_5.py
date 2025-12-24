@@ -222,8 +222,11 @@ def move_j6_by_delta_deg(robot, delta_deg, tool, user, reconnect=None):
 
 def search_target_with_step_check(robot, cur_pose6, cur_joint6, base_target6, step_scale, reconnect=None):
     """
-    ✅ target_pose True 찾기 + step_pose True도 확인
-    (MoveCart 112 방지용)
+    ✅ target_pose True 찾기 + step_pose True도 확인 (MoveCart 112 방지용)
+    ✅ 우선순위 변경:
+       1) ry 먼저 살짝 건드림 (rz 고정)
+       2) 그 다음 rz만
+       3) 마지막에 rx/ry/rz 조합(best score)
     """
     x, y, z, rx0, ry0, rz0 = base_target6
 
@@ -235,62 +238,74 @@ def search_target_with_step_check(robot, cur_pose6, cur_joint6, base_target6, st
     tries = 0
     t0 = time.time()
 
-    # 먼저 rz만
-    for drz in rz_list:
-        if time.time() - t0 > 8.0:
-            break
+    def check_candidate(cand_target, d_tuple):
+        nonlocal tries
         tries += 1
-        cand_target = [x, y, z, rx0, ry0, rz0 + float(drz)]
+
+        # 시간 제한
+        if (time.time() - t0) > 8.0:
+            return None, True  # stop
+
         if not has_solution(robot, cand_target, cur_joint6, reconnect=reconnect):
-            continue
+            return None, False
 
         cand_step = ensure_pose6(blend_pose(cur_pose6, cand_target, step_scale))
         if not has_solution(robot, cand_step, cur_joint6, reconnect=reconnect):
-            continue
+            return None, False
 
         j6 = get_ik(robot, cand_step, cur_joint6, reconnect=reconnect)
         if j6 is None:
-            continue
+            return None, False
 
         score = joint_delta_norm(j6, cur_joint6)
-        return {
+        cand = {
             "target": cand_target,
             "step": cand_step,
             "step_joint": j6,
             "score": score,
-            "d": (0.0, 0.0, float(drz)),
+            "d": d_tuple,
             "tries": tries
         }
+        return cand, False
 
-    # 안되면 rx/ry 포함
+    # -----------------------------
+    # 1) ✅ ry만 먼저 (rz 고정)
+    # -----------------------------
+    for dry in ry_list:
+        cand_target = [x, y, z, rx0, ry0 + float(dry), rz0]
+        cand, stop = check_candidate(cand_target, (0.0, float(dry), 0.0))
+        if stop:
+            return best
+        if cand is not None:
+            return cand
+
+    # -----------------------------
+    # 2) 그 다음 rz만 (기존 1단계였던 것)
+    # -----------------------------
+    for drz in rz_list:
+        cand_target = [x, y, z, rx0, ry0, rz0 + float(drz)]
+        cand, stop = check_candidate(cand_target, (0.0, 0.0, float(drz)))
+        if stop:
+            return best
+        if cand is not None:
+            return cand
+
+    # -----------------------------
+    # 3) 마지막: rx/ry/rz 조합 (best score)
+    # -----------------------------
     for drx in rx_list:
         for dry in ry_list:
             for drz in rz_list:
                 if tries > 900 or (time.time() - t0) > 8.0:
                     return best
-                tries += 1
 
                 cand_target = [x, y, z, rx0 + float(drx), ry0 + float(dry), rz0 + float(drz)]
-                if not has_solution(robot, cand_target, cur_joint6, reconnect=reconnect):
+                cand, stop = check_candidate(cand_target, (float(drx), float(dry), float(drz)))
+                if stop:
+                    return best
+                if cand is None:
                     continue
 
-                cand_step = ensure_pose6(blend_pose(cur_pose6, cand_target, step_scale))
-                if not has_solution(robot, cand_step, cur_joint6, reconnect=reconnect):
-                    continue
-
-                j6 = get_ik(robot, cand_step, cur_joint6, reconnect=reconnect)
-                if j6 is None:
-                    continue
-
-                score = joint_delta_norm(j6, cur_joint6)
-                cand = {
-                    "target": cand_target,
-                    "step": cand_step,
-                    "step_joint": j6,
-                    "score": score,
-                    "d": (float(drx), float(dry), float(drz)),
-                    "tries": tries
-                }
                 if (best is None) or (cand["score"] < best["score"]):
                     best = cand
 
