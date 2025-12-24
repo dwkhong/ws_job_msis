@@ -4,7 +4,7 @@ from ultralytics import YOLO
 import cv2
 import time
 
-MODEL_PATH = r"C:\Users\rhdeh\Desktop\ws_job_msis\src\model_obj\best_obj_20251218.pt"
+MODEL_PATH = r"C:\Users\rhdeh\ws_job_msis\amr_project\src\labtop_pc\model\model_obj\best_obj_20251218.pt"
 
 CONF_THRES = 0.85
 IOU_THRES  = 0.75

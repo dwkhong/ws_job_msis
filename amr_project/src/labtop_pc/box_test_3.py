@@ -19,9 +19,9 @@ BOX_H_MM = 95.0
 # -----------------------------
 # ✅ Camera -> Gripper Offset (mm)
 # -----------------------------
-OFF_X_MM = 0.0
+OFF_X_MM = 15
 OFF_Y_MM = -70.0
-OFF_Z_MM = -180.0
+OFF_Z_MM = -150
 
 # -----------------------------
 # ✅ 목표: 유효 샘플 N개
@@ -261,7 +261,6 @@ def main():
 
             X_m, Y_m = XY_from_pixel_and_Z(cx, cy, intr, Z_use_m)
             Z_m = Z_use_m
-            Y_m = -Y_m
             dist_m = float(np.sqrt(X_m*X_m + Y_m*Y_m + Z_m*Z_m))
             angle = obb_angle_deg_upright0_rightplus(poly)
 
@@ -339,7 +338,7 @@ def main():
 
         # ✅ REAL MOVEMENT: 타겟으로 가려면 gripper 좌표의 "반대방향"으로 이동 (mm)
         move_x_mm = -float(g_mean[0])
-        move_y_mm = -float(g_mean[1])
+        move_y_mm = +float(g_mean[1])
         move_z_mm = -float(g_mean[2])
 
         print("\n========== RESULT (AVERAGE over 10 valid) ==========")

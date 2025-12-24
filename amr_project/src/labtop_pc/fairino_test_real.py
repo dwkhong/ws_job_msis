@@ -3,18 +3,15 @@ import time
 
 from box_test_3 import main as measure_main
 
+# ✅ Robot.cp39-win_amd64.pyd 폴더를 Python 경로에 추가
 sys.path.insert(
     0,
     r"C:\Users\rhdeh\ws_job_msis\amr_project\driver\fairino-python-sdk-main\windows\fairino\build\lib.win-amd64-cpython-39"
 )
-
 import Robot
 
-
 ROBOT_IP = "192.168.58.3"
-
-# ✅ 0.1이면 1/10씩만 이동, 1.0이면 target까지 한 번에 이동
-STEP_SCALE = 0.1
+STEP_SCALE = 0.1  # 0.1 = 1/10 step
 
 
 # -------------------------
@@ -27,11 +24,10 @@ def fmt_pose6(pose):
     return f"[x,y,z,rx,ry,rz]=[{x:.3f}, {y:.3f}, {z:.3f}, {rx:.3f}, {ry:.3f}, {rz:.3f}]"
 
 
-def fmt_joint6(j):
-    if not isinstance(j, (list, tuple)) or len(j) < 6:
+def fmt_joint(j):
+    if not isinstance(j, (list, tuple)):
         return str(j)
-    j1, j2, j3, j4, j5, j6 = j[:6]
-    return f"[j1..j6]=[{j1:.3f}, {j2:.3f}, {j3:.3f}, {j4:.3f}, {j5:.3f}, {j6:.3f}]"
+    return "[" + ", ".join(f"{float(v):.3f}" for v in j) + "]"
 
 
 def ensure_pose6(p):
@@ -39,7 +35,7 @@ def ensure_pose6(p):
         raise ValueError(f"pose is not list/tuple: {type(p)}")
     if len(p) < 6:
         raise ValueError(f"pose length < 6: {len(p)}")
-    return list(p[:6])
+    return [float(x) for x in p[:6]]
 
 
 def ensure_joint6(j):
@@ -47,11 +43,24 @@ def ensure_joint6(j):
         raise ValueError(f"joint is not list/tuple: {type(j)}")
     if len(j) < 6:
         raise ValueError(f"joint length < 6: {len(j)}")
-    return list(j[:6])
+    return [float(x) for x in j[:6]]
+
+
+def ensure_joint7(j):
+    """
+    ✅ MoveL 내부 포맷이 desc(6)+joint(7)=13을 기대하는 케이스 대응
+    - 6개면 7번째(외부축/예약축) 0.0을 붙인다.
+    """
+    if not isinstance(j, (list, tuple)):
+        raise ValueError(f"joint is not list/tuple: {type(j)}")
+    if len(j) >= 7:
+        return [float(x) for x in j[:7]]
+    if len(j) == 6:
+        return [float(x) for x in list(j) + [0.0]]
+    raise ValueError(f"joint length invalid: {len(j)}")
 
 
 def build_target_pose(cur_pose, move_res):
-    """angle은 적용 안 하고 XYZ만 반영해 target_pose 생성 (100% 기준)"""
     x, y, z, rx, ry, rz = ensure_pose6(cur_pose)
     dx = float(move_res["move_x_mm"])
     dy = float(move_res["move_y_mm"])
@@ -60,49 +69,28 @@ def build_target_pose(cur_pose, move_res):
 
 
 def blend_pose(cur_pose, target_pose, scale):
-    """현재 -> 타겟 방향으로 scale만큼만 이동한 중간 pose"""
     cur = ensure_pose6(cur_pose)
     tgt = ensure_pose6(target_pose)
-    out = []
-    for i in range(6):
-        out.append(cur[i] + (tgt[i] - cur[i]) * float(scale))
-    return out
+    s = float(scale)
+    return [cur[i] + (tgt[i] - cur[i]) * s for i in range(6)]
 
 
-def try_get_actual_joint(robot):
-    # SDK별 함수명 차이를 흡수 (가능한 후보들 시도)
-    candidates = [
-        "GetActualJointPos",
-        "GetActualJointPosition",
-        "GetActualJoint",
-        "GetCurJointPos",
-        "GetCurrentJointPos",
-    ]
-    last_err = None
-    for name in candidates:
-        fn = getattr(robot, name, None)
-        if fn is None:
-            continue
-        try:
-            out = fn()
-            if isinstance(out, (list, tuple)) and len(out) == 2:
-                return out[0], out[1]  # (err, joint)
-            return 0, out
-        except Exception as e:
-            last_err = e
-    raise AttributeError(f"Joint getter not found/failed. last_err={last_err}")
+def get_actual_joint_deg(robot, flag=1):
+    # ✅ 문서 함수명 그대로
+    err, joint_pos = robot.GetActualJointPosDegree(flag=flag)
+    return err, joint_pos
 
 
 def prompt_menu():
     print("=======================================")
     print("무슨 기능을 할까요?")
-    print("  1 : 현재 tcp_pose 가져오기/저장 (GetActualTCPPose)")
+    print("  1 : 현재 tcp_pose + joint(deg) 가져오기/저장")
     print("  2 : box_test_3 측정 실행/저장 (moveXYZ/angle)")
     print("  3 : target_pose 생성/저장 (1+2)")
-    print("  4 : IK 가능/불가능 확인 (HasSolution)")
-    print("  5 : IK 해(joint 솔루션) 계산해서 출력")
-    print(f"  6 : MoveL로 이동 (현재→target * {STEP_SCALE})")
-    print(f"  7 : MoveCart로 이동 (현재→target * {STEP_SCALE})")
+    print("  4 : IK 가능/불가능 확인 (HasSolution)  ※ target_pose 기준")
+    print("  5 : IK 해(joint 솔루션) 계산해서 출력  ※ target_pose 기준")
+    print(f"  6 : MoveL 이동 (현재→target * {STEP_SCALE})  ✅ joint_pos=7 강제 + 위치인자 호출")
+    print(f"  7 : MoveCart 이동 (현재→target * {STEP_SCALE})")
     print("  q : 종료")
     print("=======================================")
     return input("입력 (1/2/3/4/5/6/7/q) > ").strip()
@@ -114,17 +102,30 @@ def main():
     print("[INFO] Robot connected ✅\n")
 
     # -------------------------
-    # Motion params (원하면 바꿔)
+    # Motion params
     # -------------------------
     tool = 0
     user = 0
-    vel = 20.0     # 0~100 (%)
+    vel = 20.0
     acc = 0.0
     ovl = 100.0
-    blendT = -1.0  # blocking
-    blendR = -1.0  # blocking
+    blendT = -1.0
+    blendR = -1.0
+    config = -1
 
+    # MoveL 문서 기본 파라미터들
+    blendMode = 0
+    exaxis_pos = [0.0, 0.0, 0.0, 0.0]
+    search = 0
+    offset_flag = 0
+    offset_pos = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    velAccParamMode = 0
+    overSpeedStrategy = 0
+    speedPercent = 10
+
+    # 저장값
     last_tcp_pose = None
+    last_joint6 = None
     last_measure = None
     last_target_pose = None
 
@@ -132,22 +133,34 @@ def main():
         while True:
             cmd = prompt_menu()
 
-            # 1) 현재 TCP pose 저장
+            # 1) 현재 tcp + joint 저장
             if cmd == "1":
                 print("\n[ACTION] GetActualTCPPose(flag=1)...")
                 try:
-                    err, tcp_pose = robot.GetActualTCPPose(flag=1)
+                    err_p, tcp_pose = robot.GetActualTCPPose(flag=1)
                 except Exception as e:
                     print(f"[ERROR] GetActualTCPPose 예외: {e}\n")
                     continue
-
-                if err != 0:
-                    print(f"[FAIL] GetActualTCPPose err={err}, pose={tcp_pose}\n")
+                if err_p != 0:
+                    print(f"[FAIL] GetActualTCPPose err={err_p}, pose={tcp_pose}\n")
                     continue
 
-                last_tcp_pose = tcp_pose
-                print("[OK] tcp_pose 저장 ✅")
-                print(fmt_pose6(last_tcp_pose))
+                print("[ACTION] GetActualJointPosDegree(flag=1)...")
+                try:
+                    err_j, joint_pos = get_actual_joint_deg(robot, flag=1)
+                except Exception as e:
+                    print(f"[ERROR] GetActualJointPosDegree 예외: {e}\n")
+                    continue
+                if err_j != 0:
+                    print(f"[FAIL] GetActualJointPosDegree err={err_j}, joint={joint_pos}\n")
+                    continue
+
+                last_tcp_pose = ensure_pose6(tcp_pose)
+                last_joint6 = ensure_joint6(joint_pos)
+
+                print("[OK] 현재 상태 저장 ✅")
+                print("tcp_pose :", fmt_pose6(last_tcp_pose))
+                print("joint6   :", fmt_joint(last_joint6))
                 print()
 
             # 2) box_test_3 측정 저장
@@ -158,7 +171,6 @@ def main():
                 except Exception as e:
                     print(f"[ERROR] box_test_3 실행 예외: {e}\n")
                     continue
-
                 if res is None:
                     print("[FAIL] 측정 실패(None)\n")
                     continue
@@ -188,23 +200,26 @@ def main():
                 print("target_pose  :", fmt_pose6(last_target_pose))
                 print()
 
-            # 4) IK 가능/불가능만
+            # 4) IK 가능/불가능 (target_pose 기준)
             elif cmd == "4":
                 if last_target_pose is None:
                     print("\n[WARN] 3번으로 target_pose 먼저 생성.\n")
                     continue
 
                 try:
-                    _, cur_joint = try_get_actual_joint(robot)
-                    cur_joint = ensure_joint6(cur_joint)
+                    err_j, cur_joint = get_actual_joint_deg(robot, flag=1)
                 except Exception as e:
-                    print(f"[ERROR] 현재 joint 읽기 실패: {e}\n")
+                    print(f"[ERROR] GetActualJointPosDegree 예외: {e}\n")
+                    continue
+                if err_j != 0:
+                    print(f"[FAIL] GetActualJointPosDegree err={err_j}, joint={cur_joint}\n")
                     continue
 
+                cur_joint6 = ensure_joint6(cur_joint)
                 target = ensure_pose6(last_target_pose)
 
                 try:
-                    err, result = robot.GetInverseKinHasSolution(0, target, cur_joint)
+                    err, result = robot.GetInverseKinHasSolution(0, target, cur_joint6)
                 except Exception as e:
                     print(f"[ERROR] GetInverseKinHasSolution 예외: {e}\n")
                     continue
@@ -212,30 +227,31 @@ def main():
                 if err != 0:
                     print(f"[FAIL] HasSolution err={err}, result={result}\n")
                 else:
-                    print(f"[RESULT] HasSolution = {bool(result)}\n")
+                    print(f"[RESULT] HasSolution(target_pose) = {bool(result)}\n")
 
-            # 5) IK 해(joint 솔루션) 출력
+            # 5) IK 해 출력 (target_pose 기준)
             elif cmd == "5":
                 if last_target_pose is None:
                     print("\n[WARN] 3번으로 target_pose 먼저 생성.\n")
                     continue
 
                 try:
-                    _, cur_joint = try_get_actual_joint(robot)
-                    cur_joint = ensure_joint6(cur_joint)
+                    err_j, cur_joint = get_actual_joint_deg(robot, flag=1)
                 except Exception as e:
-                    print(f"[ERROR] 현재 joint 읽기 실패: {e}\n")
+                    print(f"[ERROR] GetActualJointPosDegree 예외: {e}\n")
+                    continue
+                if err_j != 0:
+                    print(f"[FAIL] GetActualJointPosDegree err={err_j}, joint={cur_joint}\n")
                     continue
 
+                cur_joint6 = ensure_joint6(cur_joint)
                 target = ensure_pose6(last_target_pose)
 
-                # 존재여부 확인
                 try:
-                    err_sol, has_sol = robot.GetInverseKinHasSolution(0, target, cur_joint)
+                    err_sol, has_sol = robot.GetInverseKinHasSolution(0, target, cur_joint6)
                 except Exception as e:
                     print(f"[ERROR] GetInverseKinHasSolution 예외: {e}\n")
                     continue
-
                 if err_sol != 0:
                     print(f"[FAIL] HasSolution err={err_sol}, result={has_sol}\n")
                     continue
@@ -243,96 +259,131 @@ def main():
                     print("[RESULT] ❌ IK 해 없음: target 도달 불가\n")
                     continue
 
-                print("\n[ACTION] GetInverseKinRef(type=0, target, current_joint)...")
                 try:
-                    err_ik, joint_sol = robot.GetInverseKinRef(0, target, cur_joint)
+                    err_ik, joint_sol = robot.GetInverseKinRef(0, target, cur_joint6)
                 except Exception as e:
                     print(f"[ERROR] GetInverseKinRef 예외: {e}\n")
                     continue
-
                 if err_ik != 0:
                     print(f"[FAIL] GetInverseKinRef err={err_ik}, joint_sol={joint_sol}\n")
                     continue
 
-                joint_sol = ensure_joint6(joint_sol)
-                dj = [joint_sol[i] - cur_joint[i] for i in range(6)]
-
+                joint_sol6 = ensure_joint6(joint_sol)
                 print("[OK] IK Joint Solution ✅")
-                print("current_joint:", fmt_joint6(cur_joint))
-                print("joint_sol    :", fmt_joint6(joint_sol))
-                print(f"delta(deg)   : ({dj[0]:+.3f}, {dj[1]:+.3f}, {dj[2]:+.3f}, {dj[3]:+.3f}, {dj[4]:+.3f}, {dj[5]:+.3f})\n")
+                print("current_joint6:", fmt_joint(cur_joint6))
+                print("joint_sol6    :", fmt_joint(joint_sol6))
+                print()
 
-            # 6) MoveL 이동
+            # 6) MoveL
             elif cmd == "6":
                 if last_target_pose is None:
                     print("\n[WARN] 3번으로 target_pose 먼저 생성.\n")
                     continue
 
-                # 현재 TCP 읽고 step target 만들기
+                # 현재 TCP
                 try:
-                    err, cur_pose = robot.GetActualTCPPose(flag=1)
+                    err_p, cur_pose = robot.GetActualTCPPose(flag=1)
                 except Exception as e:
                     print(f"\n[ERROR] GetActualTCPPose 예외: {e}\n")
                     continue
-
-                if err != 0:
-                    print(f"\n[FAIL] GetActualTCPPose err={err}, pose={cur_pose}\n")
+                if err_p != 0:
+                    print(f"\n[FAIL] GetActualTCPPose err={err_p}, pose={cur_pose}\n")
                     continue
 
-                step_pose = blend_pose(cur_pose, last_target_pose, STEP_SCALE)
+                # 현재 joint
+                try:
+                    err_j, cur_joint = get_actual_joint_deg(robot, flag=1)
+                except Exception as e:
+                    print(f"[ERROR] GetActualJointPosDegree 예외: {e}\n")
+                    continue
+                if err_j != 0:
+                    print(f"[FAIL] GetActualJointPosDegree err={err_j}, joint={cur_joint}\n")
+                    continue
+                cur_joint6 = ensure_joint6(cur_joint)
 
-                print("\n[ACTION] MoveL 실행 ✅")
-                print("current :", fmt_pose6(cur_pose))
-                print("target  :", fmt_pose6(last_target_pose))
-                print(f"step({STEP_SCALE}) :", fmt_pose6(step_pose))
+                # step pose
+                step_pose = ensure_pose6(blend_pose(cur_pose, last_target_pose, STEP_SCALE))
+
+                # IK 해 계산
+                try:
+                    err_sol, has_sol = robot.GetInverseKinHasSolution(0, step_pose, cur_joint6)
+                except Exception as e:
+                    print(f"[ERROR] GetInverseKinHasSolution 예외: {e}\n")
+                    continue
+                if err_sol != 0 or not bool(has_sol):
+                    print(f"[RESULT] ❌ step_pose IK 해 없음 (err={err_sol}, has={has_sol})\n")
+                    continue
 
                 try:
+                    err_ik, joint_sol = robot.GetInverseKinRef(0, step_pose, cur_joint6)
+                except Exception as e:
+                    print(f"[ERROR] GetInverseKinRef 예외: {e}\n")
+                    continue
+                if err_ik != 0:
+                    print(f"[FAIL] GetInverseKinRef err={err_ik}, joint_sol={joint_sol}\n")
+                    continue
+
+                joint_sol6 = ensure_joint6(joint_sol)
+                joint_sol7 = ensure_joint7(joint_sol6)  # ✅ 7개 강제
+
+                print("\n[ACTION] MoveL 실행 ✅ (positional call + joint_pos 7개)")
+                print("LEN step_pose :", len(step_pose), step_pose)
+                print("LEN joint_sol6:", len(joint_sol6), joint_sol6)
+                print("LEN joint_sol7:", len(joint_sol7), joint_sol7)
+                print("current_pose  :", fmt_pose6(cur_pose))
+                print("target_pose   :", fmt_pose6(last_target_pose))
+                print(f"step({STEP_SCALE})    :", fmt_pose6(step_pose))
+                print("config        :", config)
+
+                # ✅ 핵심: keyword 대신 "위치인자"로 문서 순서대로 넣어줌 (래퍼/format 꼬임 방지)
+                try:
                     rtn = robot.MoveL(
-                        desc_pos=ensure_pose6(step_pose),
-                        tool=tool,
-                        user=user,
-                        vel=vel,
-                        acc=acc,
-                        ovl=ovl,
-                        blendR=blendR
+                        step_pose,        # desc_pos
+                        tool,             # tool
+                        user,             # user
+                        joint_sol7,        # joint_pos (7)
+                        vel,              # vel
+                        acc,              # acc
+                        ovl,              # ovl
+                        blendR,           # blendR
+                        blendMode,        # blendMode
+                        exaxis_pos,       # exaxis_pos (4)
+                        search,           # search
+                        offset_flag,      # offset_flag
+                        offset_pos,       # offset_pos (6)
+                        config,           # config
+                        velAccParamMode,  # velAccParamMode
+                        overSpeedStrategy,# overSpeedStrategy
+                        speedPercent      # speedPercent
                     )
                     print(f"[RET] MoveL errcode: {rtn}\n")
                 except Exception as e:
                     print(f"[ERROR] MoveL 예외: {e}\n")
 
-            # 7) MoveCart 이동
+            # 7) MoveCart (문서 그대로)
             elif cmd == "7":
                 if last_target_pose is None:
                     print("\n[WARN] 3번으로 target_pose 먼저 생성.\n")
                     continue
 
                 try:
-                    err, cur_pose = robot.GetActualTCPPose(flag=1)
+                    err_p, cur_pose = robot.GetActualTCPPose(flag=1)
                 except Exception as e:
                     print(f"\n[ERROR] GetActualTCPPose 예외: {e}\n")
                     continue
-
-                if err != 0:
-                    print(f"\n[FAIL] GetActualTCPPose err={err}, pose={cur_pose}\n")
+                if err_p != 0:
+                    print(f"\n[FAIL] GetActualTCPPose err={err_p}, pose={cur_pose}\n")
                     continue
 
-                step_pose = blend_pose(cur_pose, last_target_pose, STEP_SCALE)
+                step_pose = ensure_pose6(blend_pose(cur_pose, last_target_pose, STEP_SCALE))
 
                 print("\n[ACTION] MoveCart 실행 ✅")
-                print("current :", fmt_pose6(cur_pose))
-                print("target  :", fmt_pose6(last_target_pose))
-                print(f"step({STEP_SCALE}) :", fmt_pose6(step_pose))
+                print("current_pose  :", fmt_pose6(cur_pose))
+                print("target_pose   :", fmt_pose6(last_target_pose))
+                print(f"step({STEP_SCALE})    :", fmt_pose6(step_pose))
 
                 try:
-                    rtn = robot.MoveCart(
-                        desc_pos=ensure_pose6(step_pose),
-                        tool=tool,
-                        user=user,
-                        vel=vel,
-                        acc=acc,
-                        ovl=ovl,
-                        blendT=blendT
-                    )
+                    rtn = robot.MoveCart(step_pose, tool, user, vel, acc, ovl, blendT, -1)
                     print(f"[RET] MoveCart errcode: {rtn}\n")
                 except Exception as e:
                     print(f"[ERROR] MoveCart 예외: {e}\n")
@@ -355,5 +406,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
