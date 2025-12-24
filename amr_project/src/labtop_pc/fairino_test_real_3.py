@@ -2,7 +2,7 @@ import sys
 import time
 import math
 
-from box_test_4 import main as measure_main
+from box_test_3 import main as measure_main
 
 # ✅ Robot.cp39-win_amd64.pyd 폴더를 Python 경로에 추가
 sys.path.insert(
@@ -19,6 +19,14 @@ ROBOT_IP = "192.168.58.3"
 STEP_SCALE_DEFAULT = 0.1     # 기본: y/z 10% 이동
 X_SCALE_MULT = 3.0          # ✅ X는 y/z보다 더 많이 이동 (예: 3배 => x는 30%)
 
+# -------------------------
+# ✅ 6번(J6 회전) config
+# -------------------------
+ANGLE_TO_J6_SIGN = +1.0     # angle_deg 방향이 반대면 -1.0로 바꿔
+J6_MAX_STEP_DEG  = 45.0     # 안전장치: 한 번에 최대 회전각 제한
+MOVEJ_VEL_J6     = 10.0     # MoveJ 속도(%)
+MOVEJ_BLENDT_J6  = -1.0     # -1 blocking
+
 
 # -------------------------
 # Utils
@@ -33,7 +41,7 @@ def fmt_pose6(pose):
 def fmt_joint(j):
     if not isinstance(j, (list, tuple)):
         return str(j)
-    return "[" + ", ".join(f"{float(v):.3f}" for v in j) + "]"
+    return "[" + ", ".join(f"{float(v):.3f}" for v in j[:6]) + "]"
 
 
 def ensure_pose6(p):
@@ -50,6 +58,13 @@ def ensure_joint6(j):
     if len(j) < 6:
         raise ValueError(f"joint length < 6: {len(j)}")
     return [float(x) for x in j[:6]]
+
+
+def joint_delta_str(j_new, j_old):
+    if j_new is None or j_old is None:
+        return "(delta N/A)"
+    d = [float(a) - float(b) for a, b in zip(j_new[:6], j_old[:6])]
+    return "[" + ", ".join(f"{v:+.3f}" for v in d) + "]"
 
 
 def build_target_pose(cur_pose, move_res):
@@ -132,6 +147,14 @@ def safe_call(fn, *args, retry=1, sleep_sec=0.25, reconnect_cb=None, **kwargs):
             raise last_e
 
 
+def read_pose_joint(robot, reconnect=None):
+    err_p, pose = safe_call(robot.GetActualTCPPose, flag=1, retry=1, reconnect_cb=reconnect)
+    err_j, joint = safe_call(robot.GetActualJointPosDegree, flag=1, retry=1, reconnect_cb=reconnect)
+    if err_p != 0 or err_j != 0:
+        return (err_p, None), (err_j, None)
+    return (0, ensure_pose6(pose)), (0, ensure_joint6(joint))
+
+
 def has_solution(robot, pose6, cur_joint6, reconnect=None):
     err, ok = safe_call(robot.GetInverseKinHasSolution, 0, pose6, cur_joint6, retry=1, reconnect_cb=reconnect)
     if err != 0:
@@ -148,6 +171,35 @@ def get_ik(robot, pose6, cur_joint6, reconnect=None):
 
 def joint_delta_norm(j_sol6, j_ref6):
     return math.sqrt(sum((float(a) - float(b)) ** 2 for a, b in zip(j_sol6, j_ref6)))
+
+
+def move_j6_by_delta_deg(robot, delta_deg, tool, user, reconnect=None):
+    """
+    ✅ 6번: box_test_3에서 나온 angle_deg 만큼 J6만 상대 회전 (MoveJ)
+    """
+    err_j, cur_joint = safe_call(robot.GetActualJointPosDegree, flag=1, retry=1, reconnect_cb=reconnect)
+    if err_j != 0:
+        print(f"[FAIL] GetActualJointPosDegree err={err_j}")
+        return err_j
+
+    j_now6 = ensure_joint6(cur_joint)
+    j_tgt = list(j_now6)
+    j_tgt[5] = float(j_tgt[5]) + float(delta_deg)
+
+    print(f"[MOVEJ-J6] J6: {j_now6[5]:.3f} -> {j_tgt[5]:.3f} (delta {delta_deg:+.3f} deg)")
+
+    rtn = safe_call(
+        robot.MoveJ,
+        joint_pos=j_tgt,
+        tool=tool,
+        user=user,
+        vel=float(MOVEJ_VEL_J6),
+        blendT=float(MOVEJ_BLENDT_J6),
+        retry=1,
+        reconnect_cb=reconnect
+    )
+    print(f"[RET] MoveJ errcode: {rtn}")
+    return rtn
 
 
 def search_target_with_step_check(robot, cur_pose6, cur_joint6, base_target6, step_scale, reconnect=None):
@@ -237,10 +289,11 @@ def prompt_menu(step_scale):
     print("      - False면 rx/ry/rz를 조금씩 바꿔서 True 되는 target_pose 탐색")
     print("      - ✅ step_pose(현재→target*step)도 True인 후보만 채택")
     print("  5 : IK 해(joint 솔루션) 출력 (현재 last_target_pose 기준)")
+    print("  6 : ✅ box_test_3 angle_deg 만큼 J6 회전 (MoveJ)")
     print(f"  7 : MoveCart 이동 (Y/Z는 *{step_scale}, X는 *{min(1.0, step_scale*X_SCALE_MULT):.3f})  ✅ X 더 크게")
     print("  q : 종료")
     print("=======================================")
-    return input("입력 (1/2/3/4/5/7/q) > ").strip()
+    return input("입력 (1/2/3/4/5/6/7/q) > ").strip()
 
 
 def main():
@@ -274,22 +327,15 @@ def main():
 
             if cmd == "1":
                 print("\n[ACTION] GetActualTCPPose / Joint...")
-                try:
-                    err_p, tcp_pose = safe_call(robot.GetActualTCPPose, flag=1, retry=1, reconnect_cb=reconnect)
-                    err_j, joint_pos = safe_call(robot.GetActualJointPosDegree, flag=1, retry=1, reconnect_cb=reconnect)
-                except Exception as e:
-                    print(f"[ERROR] 현재 상태 읽기 실패: {e}\n")
+                (e1, pose6), (e2, joint6) = read_pose_joint(robot, reconnect=reconnect)
+                if e1 != 0 or e2 != 0:
+                    print(f"[FAIL] err_p={e1}, err_j={e2}\n")
                     continue
 
-                if err_p != 0 or err_j != 0:
-                    print(f"[FAIL] err_p={err_p}, err_j={err_j}\n")
-                    continue
-
-                last_tcp_pose = ensure_pose6(tcp_pose)
-                cur_joint6 = ensure_joint6(joint_pos)
+                last_tcp_pose = pose6
                 print("[OK] 현재 상태 저장 ✅")
-                print("tcp_pose :", fmt_pose6(last_tcp_pose))
-                print("joint6   :", fmt_joint(cur_joint6))
+                print("tcp_pose :", fmt_pose6(pose6))
+                print("joint6   :", fmt_joint(joint6))
                 print()
 
             elif cmd == "2":
@@ -322,18 +368,11 @@ def main():
                     print("\n[WARN] 3번으로 target_pose 먼저 생성.\n")
                     continue
 
-                try:
-                    err_p, cur_pose = safe_call(robot.GetActualTCPPose, flag=1, retry=1, reconnect_cb=reconnect)
-                    err_j, cur_joint = safe_call(robot.GetActualJointPosDegree, flag=1, retry=1, reconnect_cb=reconnect)
-                except Exception as e:
-                    print(f"[ERROR] 현재 상태 읽기 실패: {e}\n")
-                    continue
-                if err_p != 0 or err_j != 0:
-                    print(f"[FAIL] err_p={err_p}, err_j={err_j}\n")
+                (e1, cur_pose6), (e2, cur_joint6) = read_pose_joint(robot, reconnect=reconnect)
+                if e1 != 0 or e2 != 0:
+                    print(f"[FAIL] err_p={e1}, err_j={e2}\n")
                     continue
 
-                cur_pose6 = ensure_pose6(cur_pose)
-                cur_joint6 = ensure_joint6(cur_joint)
                 target = ensure_pose6(last_target_pose)
 
                 ok = has_solution(robot, target, cur_joint6, reconnect=reconnect)
@@ -367,7 +406,6 @@ def main():
                 print("  step IK joint6  :", fmt_joint(best["step_joint"]))
                 print("  => last_target_pose 업데이트 ✅\n")
 
-                # ✅ 업데이트 후 최종 확인(사용자 요구)
                 ok2 = has_solution(robot, ensure_pose6(last_target_pose), cur_joint6, reconnect=reconnect)
                 print(f"[RECHECK] updated target_pose HasSolution = {ok2}\n")
 
@@ -375,11 +413,8 @@ def main():
                 if last_target_pose is None:
                     print("\n[WARN] target_pose 없음.\n")
                     continue
-                try:
-                    err_j, cur_joint = safe_call(robot.GetActualJointPosDegree, flag=1, retry=1, reconnect_cb=reconnect)
-                except Exception as e:
-                    print(f"[ERROR] joint 읽기 실패: {e}\n")
-                    continue
+
+                err_j, cur_joint = safe_call(robot.GetActualJointPosDegree, flag=1, retry=1, reconnect_cb=reconnect)
                 if err_j != 0:
                     print(f"[FAIL] GetActualJointPosDegree err={err_j}\n")
                     continue
@@ -397,39 +432,61 @@ def main():
                 print("joint_sol6    :", fmt_joint(j6))
                 print()
 
+            elif cmd == "6":
+                if last_measure is None:
+                    print("\n[WARN] 2번(box_test_3 측정) 먼저 실행해야 angle_deg가 있어요.\n")
+                    continue
+
+                ang = float(last_measure.get("angle_deg", 0.0))
+                delta = ANGLE_TO_J6_SIGN * ang
+
+                # 안전장치 clamp
+                if delta > J6_MAX_STEP_DEG:
+                    delta = J6_MAX_STEP_DEG
+                elif delta < -J6_MAX_STEP_DEG:
+                    delta = -J6_MAX_STEP_DEG
+
+                print("\n[ACTION] Rotate J6 by measured angle_deg (from box_test_3)")
+                print(f"  angle_deg={ang:+.3f}  sign={ANGLE_TO_J6_SIGN:+.1f}  => delta(J6)={delta:+.3f} deg")
+
+                move_j6_by_delta_deg(robot, delta, tool, user, reconnect=reconnect)
+                print()
+
             elif cmd == "7":
                 if last_target_pose is None:
                     print("\n[WARN] target_pose 없음.\n")
                     continue
 
-                # 현재 상태
-                try:
-                    err_p, cur_pose = safe_call(robot.GetActualTCPPose, flag=1, retry=1, reconnect_cb=reconnect)
-                    err_j, cur_joint = safe_call(robot.GetActualJointPosDegree, flag=1, retry=1, reconnect_cb=reconnect)
-                except Exception as e:
-                    print(f"[ERROR] 현재 상태 읽기 실패: {e}\n")
-                    continue
-                if err_p != 0 or err_j != 0:
-                    print(f"[FAIL] err_p={err_p}, err_j={err_j}\n")
+                # ✅ 이동 전 현재 상태 (POSE + JOINT) 출력
+                (e1, cur_pose6), (e2, cur_joint6) = read_pose_joint(robot, reconnect=reconnect)
+                if e1 != 0 or e2 != 0:
+                    print(f"[FAIL] err_p={e1}, err_j={e2}\n")
                     continue
 
-                cur_pose6 = ensure_pose6(cur_pose)
-                cur_joint6 = ensure_joint6(cur_joint)
+                print("\n[STATE BEFORE]")
+                print("  cur_pose :", fmt_pose6(cur_pose6))
+                print("  cur_joint:", fmt_joint(cur_joint6))
+                print("  tgt_pose :", fmt_pose6(last_target_pose))
 
                 vel_try_list = [vel_default, 10.0, 5.0, 3.0]
                 step_try_list = [step_scale, 0.05, 0.02, 0.01]
 
                 moved = False
+                joint_before = cur_joint6[:]  # ✅ delta 비교용
+
                 for st in step_try_list:
                     sx = min(1.0, st * X_SCALE_MULT)  # ✅ X만 더 크게
                     sy = st
                     sz = st
 
-                    step_pose = ensure_pose6(blend_pose_axis(cur_pose6, last_target_pose, (sx, sy, sz), ori_scale=st))
+                    step_pose = ensure_pose6(
+                        blend_pose_axis(cur_pose6, last_target_pose, (sx, sy, sz), ori_scale=st)
+                    )
 
                     print("\n[PREVIEW] axis-step")
                     print(f"  scaleXYZ = (sx={sx:.3f}, sy={sy:.3f}, sz={sz:.3f})")
                     print("  cur_pose :", fmt_pose6(cur_pose6))
+                    print("  cur_joint:", fmt_joint(cur_joint6))  # ✅ 여기서도 joint 같이 출력
                     print("  tgt_pose :", fmt_pose6(last_target_pose))
                     print("  step_pose:", fmt_pose6(step_pose))
 
@@ -442,7 +499,12 @@ def main():
                         print("\n[ACTION] MoveCart 시도")
                         print(f"  stepYZ={st}  stepX={sx:.3f}  vel={vv}")
                         try:
-                            rtn = safe_call(robot.MoveCart, step_pose, tool, user, vv, acc, ovl, -1.0, -1, retry=1, reconnect_cb=reconnect)
+                            rtn = safe_call(
+                                robot.MoveCart,
+                                step_pose, tool, user, vv, acc, ovl, -1.0, -1,
+                                retry=1,
+                                reconnect_cb=reconnect
+                            )
                         except Exception as e:
                             print(f"[ERROR] MoveCart 예외: {e}")
                             continue
@@ -450,7 +512,19 @@ def main():
                         print(f"[RET] MoveCart errcode: {rtn}")
 
                         if rtn == 0:
-                            print("[OK] MoveCart 성공 ✅\n")
+                            print("[OK] MoveCart 성공 ✅")
+
+                            # ✅ 이동 후 현재 joint/pose 다시 읽어서 변화 확인
+                            (a1, pose_after), (a2, joint_after) = read_pose_joint(robot, reconnect=reconnect)
+                            if a1 == 0 and a2 == 0:
+                                print("\n[STATE AFTER]")
+                                print("  new_pose  :", fmt_pose6(pose_after))
+                                print("  new_joint :", fmt_joint(joint_after))
+                                print("  joint dlt :", joint_delta_str(joint_after, joint_before))
+                            else:
+                                print(f"[WARN] after-state read failed: err_p={a1}, err_j={a2}")
+
+                            print()
                             moved = True
                             break
 
@@ -490,3 +564,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

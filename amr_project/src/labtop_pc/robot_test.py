@@ -1,6 +1,9 @@
 import sys
 import time
 
+# (너 코드에 있던 import 유지)
+from box_test_3 import main as measure_main  # 지금은 사용 안 해도 OK
+
 # ✅ Robot.cp39-win_amd64.pyd 폴더를 Python 경로에 추가
 sys.path.insert(
     0,
@@ -11,317 +14,187 @@ import Robot
 ROBOT_IP = "192.168.58.3"
 
 # -------------------------
-# Format / Parse
+# Config
 # -------------------------
-def fmt_pose6(p):
-    if not isinstance(p, (list, tuple)) or len(p) < 6:
-        return str(p)
-    x, y, z, rx, ry, rz = p[:6]
-    return f"[x,y,z,rx,ry,rz]=[{x:.3f}, {y:.3f}, {z:.3f}, {rx:.3f}, {ry:.3f}, {rz:.3f}]"
+TOOL = 0
+USER = 0
+VEL_JOG = 10.0      # MoveJ 속도(%) - 안전하게 낮게
+BLENDT = -1.0       # -1 blocking
 
-def fmt_list(lst, n=6):
-    if not isinstance(lst, (list, tuple)) or len(lst) < n:
-        return str(lst)
-    return "[" + ", ".join(f"{float(v):.3f}" for v in lst[:n]) + "]"
-
-def parse_n(line: str, n: int):
-    s = line.replace(",", " ").strip()
-    parts = [p for p in s.split() if p]
-    if len(parts) != n:
-        raise ValueError(f"{n}개가 아님: {len(parts)}개 입력됨 -> {parts}")
-    return [float(p) for p in parts]
-
-def ensure_len7(arr6_or_7):
-    """문서에 [0..0] 7개 배열이 등장하는 인자용: 6개면 뒤에 0.0을 붙여 7개로 맞춤"""
-    if not isinstance(arr6_or_7, (list, tuple)):
-        raise ValueError("not list/tuple")
-    a = list(arr6_or_7)
-    if len(a) == 6:
-        a.append(0.0)
-    if len(a) < 7:
-        raise ValueError(f"len < 7: {len(a)}")
-    return a[:7]
 
 # -------------------------
-# Actual read
+# Global cache (저장용)
 # -------------------------
-def show_actual(robot, flag=1):
+LAST_JOINT_DEG = None
+LAST_TCP_POSE  = None
+
+
+def connect_robot(ip: str):
+    """로봇 연결"""
+    robot = Robot.RPC(ip)
+    return robot
+
+
+def safe_close(robot):
     try:
-        err, tcp = robot.GetActualTCPPose(flag=flag)
-        if err == 0:
-            print("[ACTUAL TCP ]", fmt_pose6(tcp))
-        else:
-            print(f"[ACTUAL TCP ] FAIL err={err}, tcp={tcp}")
-    except Exception as e:
-        print(f"[ACTUAL TCP ] EXCEPTION: {e}")
+        robot.CloseRPC()
+    except Exception:
+        pass
 
-    try:
-        ret, j = robot.GetActualJointPosDegree(flag)
-        if ret == 0:
-            print("[ACTUAL JNT ]", fmt_list(j, 6))
-        else:
-            print(f"[ACTUAL JNT ] FAIL ret={ret}, j={j}")
-    except Exception as e:
-        print(f"[ACTUAL JNT ] EXCEPTION: {e}")
 
-# -------------------------
-# Menu
-# -------------------------
+def try_get_tcp_pose(robot):
+    """
+    SDK 버전에 따라 TCP pose 함수명이 다를 수 있어서,
+    존재하는 함수가 있으면 시도해보고 없으면 None 반환.
+    """
+    # 후보 함수명들 (SDK에 따라 다름)
+    candidates = [
+        ("GetActualTCPPose", (0,)),          # (flag) 형태일 가능성
+        ("GetActualToolFlangePose", (0,)),
+        ("GetActualPose", (0,)),
+        ("GetActualCartPos", (0,)),
+        ("GetActualTCPPos", (0,)),
+    ]
+
+    for fn, args in candidates:
+        if hasattr(robot, fn):
+            try:
+                ret, pose = getattr(robot, fn)(*args)
+                if ret == 0:
+                    return pose
+            except TypeError:
+                # 인자 형태가 다를 수 있음 → 인자 없이도 한 번 시도
+                try:
+                    ret, pose = getattr(robot, fn)()
+                    if ret == 0:
+                        return pose
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+    return None
+
+
+def get_current_state(robot):
+    """
+    현재 joint(deg) / tcp_pose 읽어서 리턴
+    """
+    global LAST_JOINT_DEG, LAST_TCP_POSE
+
+    flag = 0
+    ret_j, joints = robot.GetActualJointPosDegree(flag)
+    if ret_j != 0:
+        raise RuntimeError(f"GetActualJointPosDegree errcode={ret_j}")
+
+    tcp_pose = try_get_tcp_pose(robot)
+
+    LAST_JOINT_DEG = joints
+    LAST_TCP_POSE = tcp_pose
+    return joints, tcp_pose
+
+
+def print_state(joints, tcp_pose):
+    j_str = ", ".join([f"{v:.3f}" for v in joints[:6]])
+    print("\n================ CURRENT STATE ================")
+    print(f"JOINT(deg) : [{j_str}]")
+
+    if tcp_pose is None:
+        print("TCP pose   : (SDK에서 pose 읽는 함수 못 찾음 / 지원 안 될 수 있음)")
+    else:
+        # pose는 보통 [x,y,z,rx,ry,rz] mm/deg 형태
+        try:
+            p_str = ", ".join([f"{v:.3f}" for v in tcp_pose[:6]])
+            print(f"TCP pose   : [{p_str}]")
+        except Exception:
+            print(f"TCP pose   : {tcp_pose}")
+    print("================================================\n")
+
+
+def move_j6_relative(robot, delta_deg: float):
+    """
+    현재 joint 읽고, j6만 delta_deg 만큼 변경해서 MoveJ 수행
+    """
+    flag = 0
+    ret_j, j_now = robot.GetActualJointPosDegree(flag)
+    if ret_j != 0:
+        print(f"GetActualJointPosDegree errcode={ret_j}")
+        return ret_j
+
+    j_tgt = list(j_now)
+    j_tgt[5] = float(j_tgt[5]) + float(delta_deg)   # ✅ J6만 변경
+
+    print(f"[MOVEJ] J6: {j_now[5]:.3f} -> {j_tgt[5]:.3f} (delta {delta_deg:+.3f} deg)")
+
+    err = robot.MoveJ(
+        joint_pos=j_tgt,
+        tool=TOOL,
+        user=USER,
+        vel=VEL_JOG,
+        blendT=BLENDT
+    )
+    print(f"MoveJ errcode: {err}")
+
+    return err
+
+
 def prompt_menu():
-    print("\n=======================================")
-    print("  1 : 현재 위치 출력 (TCP/Joints)")
-    print("  2 : MoveL    (x y z rx ry rz) 6개 입력 -> Linear")
-    print("  3 : MoveCart (x y z rx ry rz) 6개 입력 -> Cartesian PTP")
-    print("  4 : MoveJ    (j1 j2 j3 j4 j5 j6) 6개 입력 -> Joint PTP")
-    print("  5 : MoveC    (path pose 6개 + target pose 6개) -> Circular")
-    print("  9 : 파라미터 보기/수정")
+    print("=======================================")
+    print("무슨 기능을 할까요?")
+    print("  1 : 현재 joint(deg) + (가능하면) tcp_pose 가져오기/저장")
+    print("  2 : J6 상대 이동 (예: +30 / -30 입력하면 J6만 그만큼 이동)")
     print("  q : 종료")
     print("=======================================")
-    return input("입력 > ").strip().lower()
+    return input("입력 (1/2/q) > ").strip()
 
-# -------------------------
-# Main
-# -------------------------
-def main():
-    print(f"[INFO] Connecting... {ROBOT_IP}")
-    robot = Robot.RPC(ROBOT_IP)
-    print("[OK] Connected ✅")
 
-    # -------------------------
-    # ✅ 기본값: 문서 디폴트 기준
-    # -------------------------
-    tool = 0
-    user = 0
-
-    vel = 20.0
-    acc = 0.0          # 문서: not open yet, default 0.0
-    ovl = 100.0
-
-    # MoveL
-    blendR = -1.0      # [-1 blocking] or [0~1000 radius mm]
-    blendMode = 0      # 0 internal cutting, 1 corner
-    exaxis_pos = [0.0, 0.0, 0.0, 0.0]
-    search = 0
-    offset_flag = 0
-    offset_pos = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-    config = -1
-    velAccParamMode = 0
-    overSpeedStrategy = 0
-    speedPercent = 10
-
-    # MoveCart / MoveJ
-    blendT = -1.0      # [-1 blocking] or [0~500 ms]
-
+def prompt_delta():
+    """
+    +30 / -30 / 15 같은 입력을 float로 파싱
+    """
+    s = input("J6 변화량 입력 (deg, 예: +30 / -30) > ").strip()
+    if not s:
+        return None
     try:
+        return float(s)
+    except ValueError:
+        print("숫자로 입력해줘. 예: +30 또는 -30")
+        return None
+
+
+def main():
+    robot = None
+    try:
+        robot = connect_robot(ROBOT_IP)
+        print(f"[OK] Connected to robot: {ROBOT_IP}")
+
         while True:
-            cmd = prompt_menu()
+            sel = prompt_menu()
 
-            if cmd == "1":
-                show_actual(robot, flag=1)
-
-            elif cmd == "2":
-                print("\n--- 현재 위치 ---")
-                show_actual(robot, flag=1)
-
-                line = input("MoveL target (x y z rx ry rz) > ")
-                try:
-                    pose6 = parse_n(line, 6)
-                except Exception as e:
-                    print(f"[WARN] 입력 오류: {e}")
-                    continue
-
-                desc_pos = ensure_len7(pose6)               # 문서 프로토타입 배열 길이 맞춤
-                joint_pos = [0.0]*7                         # 디폴트: IK로 풀이
-                print("[TARGET]", fmt_pose6(desc_pos))
-
-                try:
-                    rtn = robot.MoveL(
-                        desc_pos=desc_pos,
-                        tool=tool,
-                        user=user,
-                        joint_pos=joint_pos,
-                        vel=vel,
-                        acc=acc,
-                        ovl=ovl,
-                        blendR=blendR,
-                    )
-                    print(f"[RET] MoveL errcode: {rtn}")
-                except Exception as e:
-                    print(f"[ERROR] MoveL 예외: {e}")
-
-            elif cmd == "3":
-                print("\n--- 현재 위치 ---")
-                show_actual(robot, flag=1)
-
-                line = input("MoveCart target (x y z rx ry rz) > ")
-                try:
-                    pose6 = parse_n(line, 6)
-                except Exception as e:
-                    print(f"[WARN] 입력 오류: {e}")
-                    continue
-
-                desc_pos = ensure_len7(pose6)
-                print("[TARGET]", fmt_pose6(desc_pos))
-
-                try:
-                    rtn = robot.MoveCart(
-                        desc_pos=desc_pos,
-                        tool=tool,
-                        user=user,
-                        vel=vel,
-                        acc=acc,
-                        ovl=ovl,
-                        blendT=blendT,
-                        config=config
-                    )
-                    print(f"[RET] MoveCart errcode: {rtn}")
-                except Exception as e:
-                    print(f"[ERROR] MoveCart 예외: {e}")
-
-            elif cmd == "4":
-                print("\n--- 현재 위치 ---")
-                show_actual(robot, flag=1)
-
-                line = input("MoveJ target joints (j1 j2 j3 j4 j5 j6) > ")
-                try:
-                    j6 = parse_n(line, 6)
-                except Exception as e:
-                    print(f"[WARN] 입력 오류: {e}")
-                    continue
-
-                joint_pos = ensure_len7(j6)     # 문서 배열 길이 맞춤
-                desc_pos  = [0.0]*7             # 디폴트: FK로 계산(문서 설명)
-                print("[JOINT TARGET]", fmt_list(joint_pos, 6))
-
-                try:
-                    rtn = robot.MoveJ(
-                        joint_pos=joint_pos,
-                        tool=tool,
-                        user=user,
-                        desc_pos=desc_pos,
-                        vel=vel,
-                        acc=acc,
-                        ovl=ovl,
-                        exaxis_pos=exaxis_pos,
-                        blendT=blendT,
-                        offset_flag=offset_flag,
-                        offset_pos=offset_pos
-                    )
-                    print(f"[RET] MoveJ errcode: {rtn}")
-                except Exception as e:
-                    print(f"[ERROR] MoveJ 예외: {e}")
-
-            elif cmd == "5":
-                print("\n--- 현재 위치 ---")
-                show_actual(robot, flag=1)
-
-                line_p = input("MoveC PATH  pose (x y z rx ry rz) > ")
-                line_t = input("MoveC TARGET pose (x y z rx ry rz) > ")
-                try:
-                    p6 = parse_n(line_p, 6)
-                    t6 = parse_n(line_t, 6)
-                except Exception as e:
-                    print(f"[WARN] 입력 오류: {e}")
-                    continue
-
-                desc_pos_p = ensure_len7(p6)
-                desc_pos_t = ensure_len7(t6)
-
-                joint_pos_p = [0.0]*7  # 디폴트: IK
-                joint_pos_t = [0.0]*7  # 디폴트: IK
-
-                print("[PATH  ]", fmt_pose6(desc_pos_p))
-                print("[TARGET]", fmt_pose6(desc_pos_t))
-
-                try:
-                    rtn = robot.MoveC(
-                        desc_pos_p=desc_pos_p,
-                        tool_p=tool,
-                        user_p=user,
-                        desc_pos_t=desc_pos_t,
-                        tool_t=tool,
-                        user_t=user,
-                        joint_pos_p=joint_pos_p,
-                        joint_pos_t=joint_pos_t,
-                        vel_p=vel,
-                        acc_p=acc,
-                        exaxis_pos_p=exaxis_pos,
-                        offset_flag_p=offset_flag,
-                        offset_pos_p=offset_pos,
-                        vel_t=vel,
-                        acc_t=acc,
-                        exaxis_pos_t=exaxis_pos,
-                        offset_flag_t=offset_flag,
-                        offset_pos_t=offset_pos,
-                        ovl=ovl,
-                        blendR=blendR,
-                        config=config,
-                        velAccParamMode=velAccParamMode
-                    )
-                    print(f"[RET] MoveC errcode: {rtn}")
-                except Exception as e:
-                    print(f"[ERROR] MoveC 예외: {e}")
-
-            elif cmd == "9":
-                print("\n--- 현재 파라미터 ---")
-                print(f"tool={tool}, user={user}")
-                print(f"vel={vel}, acc={acc}, ovl={ovl}")
-                print(f"blendR={blendR}, blendT={blendT}, blendMode={blendMode}")
-                print(f"config={config}, velAccParamMode={velAccParamMode}")
-                print(f"search={search}, offset_flag={offset_flag}, speedPercent={speedPercent}, overSpeedStrategy={overSpeedStrategy}")
-                print(f"exaxis_pos={exaxis_pos}")
-                print(f"offset_pos={offset_pos}")
-
-                print("\n수정 예시: vel=10  또는  tool=1  또는  blendR=-1  (엔터=취소)")
-                line = input("수정 입력 (key=value) > ").strip()
-                if not line:
-                    continue
-                if "=" not in line:
-                    print("[WARN] 형식은 key=value")
-                    continue
-                k, v = [x.strip() for x in line.split("=", 1)]
-
-                try:
-                    if k in ("tool", "user", "blendMode", "search", "offset_flag", "config", "velAccParamMode", "overSpeedStrategy", "speedPercent"):
-                        val = int(float(v))
-                    else:
-                        val = float(v)
-
-                    if k == "tool": tool = val
-                    elif k == "user": user = val
-                    elif k == "vel": vel = float(val)
-                    elif k == "acc": acc = float(val)
-                    elif k == "ovl": ovl = float(val)
-                    elif k == "blendR": blendR = float(val)
-                    elif k == "blendT": blendT = float(val)
-                    elif k == "blendMode": blendMode = int(val)
-                    elif k == "search": search = int(val)
-                    elif k == "offset_flag": offset_flag = int(val)
-                    elif k == "config": config = int(val)
-                    elif k == "velAccParamMode": velAccParamMode = int(val)
-                    elif k == "overSpeedStrategy": overSpeedStrategy = int(val)
-                    elif k == "speedPercent": speedPercent = int(val)
-                    else:
-                        print("[WARN] 지원 안 하는 key")
-                except Exception as e:
-                    print(f"[WARN] 수정 실패: {e}")
-
-            elif cmd == "q":
-                print("[EXIT]")
+            if sel.lower() == "q":
                 break
 
-            else:
-                print("[WARN] 잘못된 입력")
+            elif sel == "1":
+                try:
+                    joints, tcp_pose = get_current_state(robot)
+                    print_state(joints, tcp_pose)
+                except Exception as e:
+                    print(f"[ERR] state read failed: {e}")
 
-            time.sleep(0.05)
+            elif sel == "2":
+                delta = prompt_delta()
+                if delta is None:
+                    continue
+                move_j6_relative(robot, delta)
+
+            else:
+                print("지원하지 않는 메뉴야. (1/2/q) 중에서 선택해줘.")
 
     finally:
-        try:
-            robot.CloseRPC()
-        except Exception:
-            pass
+        if robot is not None:
+            safe_close(robot)
+        print("[DONE] Closed connection.")
+
 
 if __name__ == "__main__":
     main()
-
-
