@@ -26,8 +26,10 @@ MAD_THRES_M = 0.02     # ROI depth 흔들림 허용(대충 2cm)
 DEPTH_MIN_M = 0.15
 DEPTH_MAX_M = 3.00
 
+
 def clamp(v, lo, hi):
     return max(lo, min(hi, v))
+
 
 def obb_angle_deg_upright0_rightplus(poly4x2: np.ndarray) -> float:
     p = poly4x2.astype(np.float32)
@@ -45,11 +47,12 @@ def obb_angle_deg_upright0_rightplus(poly4x2: np.ndarray) -> float:
     angle = -angle
     return angle
 
+
 def draw_hud(img, lines, x=10, y=10, line_h=24):
     pad = 8
     w = max([cv2.getTextSize(s, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0][0] for s in lines] + [10])
     h = line_h * len(lines)
-    x2, y2 = x + w + pad*2, y + h + pad*2
+    x2, y2 = x + w + pad * 2, y + h + pad * 2
 
     overlay = img.copy()
     cv2.rectangle(overlay, (x, y), (x2, y2), (0, 0, 0), -1)
@@ -60,15 +63,16 @@ def draw_hud(img, lines, x=10, y=10, line_h=24):
         cv2.putText(img, s, (x + pad, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2, cv2.LINE_AA)
         ty += line_h
 
+
 def poly_shrink_towards_center(poly4x2: np.ndarray, margin_px: float):
     """OBB 4점을 중심으로 margin만큼 안쪽으로 당김(경계 depth 섞임 완화)"""
     p = poly4x2.astype(np.float32)
     c = p.mean(axis=0, keepdims=True)
     v = p - c
     norm = np.linalg.norm(v, axis=1, keepdims=True) + 1e-6
-    # 각 점을 margin 만큼 중심쪽으로 이동
     p2 = p - (v / norm) * margin_px
     return p2
+
 
 def depth_roi_stats(depth_u16: np.ndarray, depth_scale: float, poly4x2: np.ndarray):
     """
@@ -91,17 +95,17 @@ def depth_roi_stats(depth_u16: np.ndarray, depth_scale: float, poly4x2: np.ndarr
     mad = float(np.median(np.abs(d - med)))  # median absolute deviation
     return med, mad, int(d.size)
 
+
 def estimate_Z_from_size(poly4x2: np.ndarray, intr, W_cm: float, H_cm: float) -> float:
     """박스 실측 크기(W/H)와 OBB 픽셀 크기로 Z(m) 추정"""
     p = poly4x2.astype(np.float32)
-    edges = [np.linalg.norm(p[(i+1) % 4] - p[i]) for i in range(4)]
+    edges = [np.linalg.norm(p[(i + 1) % 4] - p[i]) for i in range(4)]
     long_px = float(max(edges))
     short_px = float(min(edges))
 
     W_m = W_cm / 100.0
     H_m = H_cm / 100.0
 
-    # 실측에서 더 긴 변이 long_px에 대응된다고 가정 (W,H 중 큰 쪽)
     if W_m >= H_m:
         Z1 = (intr.fx * W_m) / max(long_px, 1e-6)
         Z2 = (intr.fy * H_m) / max(short_px, 1e-6)
@@ -109,14 +113,15 @@ def estimate_Z_from_size(poly4x2: np.ndarray, intr, W_cm: float, H_cm: float) ->
         Z1 = (intr.fx * H_m) / max(long_px, 1e-6)
         Z2 = (intr.fy * W_m) / max(short_px, 1e-6)
 
-    # 두 추정을 평균(robust하게 하고 싶으면 median도 가능)
     Z = 0.5 * (Z1 + Z2)
     return float(Z)
+
 
 def XY_from_pixel_and_Z(cx: int, cy: int, intr, Z: float):
     X = (cx - intr.ppx) / intr.fx * Z
     Y = (cy - intr.ppy) / intr.fy * Z
     return float(X), float(Y)
+
 
 def main():
     model = YOLO(MODEL_PATH)
@@ -134,17 +139,14 @@ def main():
     profile = pipeline.start(config)
     align = rs.align(rs.stream.color)
 
-    # ✅ depth scale
     depth_sensor = profile.get_device().first_depth_sensor()
     depth_scale = float(depth_sensor.get_depth_scale())
     print(f"[INFO] depth_scale = {depth_scale:.8f} m/unit")
 
-    # ✅ RealSense depth filters (안정화)
     temporal = rs.temporal_filter()
     spatial = rs.spatial_filter()
     hole = rs.hole_filling_filter()
 
-    # optional tuning
     spatial.set_option(rs.option.filter_magnitude, 2)
     spatial.set_option(rs.option.filter_smooth_alpha, 0.5)
     spatial.set_option(rs.option.filter_smooth_delta, 20)
@@ -179,7 +181,6 @@ def main():
             if not color_frame or not depth_frame:
                 continue
 
-            # ✅ depth filtering (먼저 depth_frame을 필터에 통과)
             depth_frame = spatial.process(depth_frame)
             depth_frame = temporal.process(depth_frame)
             depth_frame = hole.process(depth_frame)
@@ -187,7 +188,6 @@ def main():
             frame = np.asanyarray(color_frame.get_data())
             intr = color_frame.profile.as_video_stream_profile().get_intrinsics()
 
-            # depth image(u16) for ROI stats
             depth_u16 = np.asanyarray(depth_frame.get_data())
 
             vis = frame.copy()
@@ -218,7 +218,6 @@ def main():
             if best is not None:
                 cf, ci, poly = best
 
-                # draw OBB
                 poly_i = np.round(poly).astype(np.int32).reshape(-1, 1, 2)
                 cv2.polylines(vis, [poly_i], True, (0, 255, 0), 2)
 
@@ -228,38 +227,31 @@ def main():
                 cy = clamp(cy, 0, height - 1)
                 cv2.circle(vis, (cx, cy), 4, (0, 0, 255), -1)
 
-                # ✅ ROI depth median (poly를 살짝 줄여서 경계 섞임 줄임)
                 poly_shrunk = poly_shrink_towards_center(poly, ROI_MARGIN_PX)
                 poly_shrunk[:, 0] = np.clip(poly_shrunk[:, 0], 0, width - 1)
                 poly_shrunk[:, 1] = np.clip(poly_shrunk[:, 1], 0, height - 1)
 
                 Z_roi_m, mad_m, roi_n = depth_roi_stats(depth_u16, depth_scale, poly_shrunk)
-
-                # ✅ size-based Z
                 Z_size_m = estimate_Z_from_size(poly, intr, BOX_W_CM, BOX_H_CM)
 
-                # ✅ 게이팅 + 퓨전
                 use_depth = (Z_roi_m > 0.0 and roi_n >= MIN_ROI_PIXELS and mad_m <= MAD_THRES_M)
                 if use_depth:
-                    # depth가 안정적이면 depth에 더 가중
-                    # mad가 작을수록 alpha↑
                     alpha = clamp(0.85 - (mad_m / MAD_THRES_M) * 0.35, 0.55, 0.90)
                     Z_use_m = alpha * Z_roi_m + (1.0 - alpha) * Z_size_m
                     status = "OK_FUSED"
                 else:
-                    # depth가 불안정/부족하면 size로 fallback
                     Z_use_m = Z_size_m
                     status = "OK_SIZE_ONLY" if Z_use_m > 0 else "DEPTH_INVALID"
 
                 if Z_use_m > 0.0:
                     X, Y = XY_from_pixel_and_Z(cx, cy, intr, Z_use_m)
                     Z = Z_use_m
-                    dist = float(np.sqrt(X*X + Y*Y + Z*Z))
+                    dist = float(np.sqrt(X * X + Y * Y + Z * Z))
                     angle = obb_angle_deg_upright0_rightplus(poly)
 
                     last["ok"] = True
-                    last["Xcm"], last["Ycm"], last["Zcm"] = X*100.0, Y*100.0, Z*100.0
-                    last["distcm"] = dist*100.0
+                    last["Xcm"], last["Ycm"], last["Zcm"] = X * 100.0, Y * 100.0, Z * 100.0
+                    last["distcm"] = dist * 100.0
                     last["angle"] = angle
                     last["conf"] = float(cf)
                     last["cls"] = int(ci)
@@ -271,12 +263,16 @@ def main():
                     last["mad_cm"]    = mad_m * 100.0
                     last["roi_n"]     = int(roi_n)
 
-                # 보기 좋게 shrink ROI도 표시(선택)
                 poly2_i = np.round(poly_shrunk).astype(np.int32).reshape(-1, 1, 2)
                 cv2.polylines(vis, [poly2_i], True, (255, 255, 0), 1)
 
             else:
                 status = "NO_DET"
+
+            # ✅ 화면 정중앙(카메라 중심) 아주 얇은 십자선(1px)
+            cx0, cy0 = width // 2, height // 2
+            cv2.line(vis, (cx0, 0), (cx0, height - 1), (255, 255, 255), 1)     # vertical
+            cv2.line(vis, (0, cy0), (width - 1, cy0), (255, 255, 255), 1)      # horizontal
 
             # HUD
             age = time.time() - last["t"] if last["ok"] else 999.0
@@ -303,5 +299,7 @@ def main():
         pipeline.stop()
         cv2.destroyAllWindows()
 
+
 if __name__ == "__main__":
     main()
+

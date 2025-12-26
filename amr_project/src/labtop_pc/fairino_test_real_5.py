@@ -11,20 +11,20 @@ sys.path.insert(
 )
 import Robot
 
-ROBOT_IP = "192.168.58.3"
+ROBOT_IP = "192.168.0.15"
 
 # -------------------------
 # Step config
 # -------------------------
-STEP_SCALE_DEFAULT = 0.1     # 기본: y/z 10% 이동
-X_SCALE_MULT = 3.0          # ✅ X는 y/z보다 더 많이 이동 (예: 3배 => x는 30%)
+STEP_SCALE_DEFAULT = 0.3     # 기본: y/z 10% 이동
+X_SCALE_MULT = 2.0          # ✅ X는 y/z보다 더 많이 이동 (예: 3배 => x는 30%)
 
 # -------------------------
 # ✅ 2-Phase approach (cmd=7)
 # -------------------------
-Z_HOLD_OFFSET_MM = 50.0     # 1단계에서 목표 Z보다 +50mm 위에서 멈춤
-XY_TOL_MM = 2.0             # X/Y 도착 판정 허용오차(mm)
-Z_TOL_MM  = 2.0             # Z 홀드 도착 판정 허용오차(mm)
+Z_HOLD_OFFSET_MM = 70.0     # 1단계에서 목표 Z보다 +50mm 위에서 멈춤
+XY_TOL_MM = 1             # X/Y 도착 판정 허용오차(mm)
+Z_TOL_MM  = 2           # Z 홀드 도착 판정 허용오차(mm)
 
 # -------------------------
 # ✅ 6번(J6 회전) config
@@ -607,9 +607,10 @@ def main():
                                             z_done = z_reached(pose_after, target_pose[2], tol_mm=Z_TOL_MM)
                                             print(f"  check     : Z_target_ok={z_done} (tol={Z_TOL_MM}mm)")
                                             if z_done:
-                                                approach_phase = 0
                                                 print("\n[PHASE] ✅ Z 하강 완료! (targetZ 도착)")
-                                                print("        -> 다음 목표 작업을 위해 phase=0으로 리셋\n")
+                                                return  # ✅ 여기서 main() 종료 -> finally에서 CloseRPC 실행됨
+                                                
+
 
                                     else:
                                         print(f"[WARN] after-state read failed: err_p={a1}, err_j={a2}")

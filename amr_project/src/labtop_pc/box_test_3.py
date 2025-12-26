@@ -19,7 +19,7 @@ BOX_H_MM = 95.0
 # -----------------------------
 # ✅ Camera -> Gripper Offset (mm)
 # -----------------------------
-OFF_X_MM = 15
+OFF_X_MM =  0
 OFF_Y_MM = -70.0
 OFF_Z_MM = -150
 
