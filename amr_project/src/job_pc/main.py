@@ -79,7 +79,7 @@ def main():
 
     while True:
         print_menu(robot_connected=(robot is not None), robot_ip=robot_ip)
-        cmd = input("입력 (0/1/2/3/4/5/6/7/8/9/10/q) > ").strip().lower()
+        cmd = input("입력 (0/1/2/3/4/5/6/7/8/9/q) > ").strip().lower()
 
         if cmd == "0":
             # 토글: 연결돼 있으면 끊고, 아니면 연결

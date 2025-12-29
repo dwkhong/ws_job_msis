@@ -52,7 +52,7 @@ class VisionConfig:
     max_consec_skips_reset: int = 15
 
     # preview / overlay
-    show_preview: bool = False
+    show_preview: bool = True
     preview_win_name: str = "OBB + center"
     show_overlay: bool = True
     overlay_font_scale: float = 0.6

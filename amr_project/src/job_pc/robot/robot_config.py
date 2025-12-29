@@ -1,34 +1,50 @@
 # robot_config.py
 
+# (선택) 상태 읽기 RPC retry 설정
+RPC_RETRY = 1
+RPC_RETRY_SLEEP_SEC = 0.25
+
+# IK reference (Fairino SDK에서 보통 0 사용)
+IK_REF = 0
+
 # -------------------------
 # Tool / User coordinate IDs (MoveCart 등에 사용)
 # -------------------------
 TOOL_ID = 0
 USER_ID = 0
 
-# robot_state.py에서 사용
-# 실패시에 얼마나 더 사용할건지 
-RPC_RETRY = 1
-RPC_RETRY_SLEEP_SEC = 0.25
-
-# IK reference (Fairino SDK에서 보통 0 사용)
-# ik_adjust.py에서 사용
-IK_REF = 0
-
+# CMD4 search limits
 SEARCH_TIMEOUT_SEC = 6.0
 SEARCH_MAX_TRIES = 900
 
+# "크게 안 늘리고" 기존 느낌 유지
 SEARCH_RZ_LIST = [0, 1, -1, 2, -2, 3, -3, 5, -5, 8, -8, 12, -12, 15, -15, 20, -20, 30, -30]
 SEARCH_RX_LIST = [0, 1, -1, 2, -2, 3, -3, 5, -5, 8, -8, 12, -12, 15, -15]
 SEARCH_RY_LIST = [0, 1, -1, 2, -2, 3, -3, 5, -5, 8, -8, 12, -12, 15, -15]
 
-# j6_rotate.py에서 사용
+# ============================================================
+# ✅ SPEED CONFIG (여기서 %로 조절)
+# ============================================================
+MOVE_CART_VEL_DEFAULT = 30.0          # ✅ 안전 시작 (100 -> 30)
+MOVE_CART_VEL_FALLBACKS = [15.0, 8.0, 3.0]
+MOVE_CART_VEL_LIST = [MOVE_CART_VEL_DEFAULT] + MOVE_CART_VEL_FALLBACKS
 
-ANGLE_TO_J6_SIGN = +1.0
-J6_MAX_STEP_DEG  = 45.0
+MOVE_CART_ACC = 80.0                  # ✅ 가속도 낮게
+MOVE_CART_DEC = 80.0                  # (지금 move_step.py에선 안 쓰지만 같이 둠)
+
+MOVE_CART_OVL = 20.0                  # ✅ override(%) 안전 시작 (20%)
+MOVE_CART_BLENDT = -1.0               # ✅ blending time (보통 -1 = off/기본)
+MOVE_CART_EX = 0                      # ✅ 확장옵션/모드 (기본 0)
 
 MOVEJ_VEL_J6 = 60.0
 MOVEJ_BLENDT_J6 = -1.0
+
+MOVEJ_VEL_RETURN = 60.0
+MOVEJ_BLENDT_RETURN = -1.0
+
+# ✅ 11번용 MoveJ 속도
+MOVEJ_VEL_WP11 = 30.0
+MOVEJ_BLENDT_WP11 = -1.0
 
 # -------------------------
 # Step config (7번용 유지)
@@ -44,30 +60,15 @@ XY_TOL_MM = 1
 Z_TOL_MM  = 2
 
 # -------------------------
+# ✅ 6번(J6 회전)
+# -------------------------
+ANGLE_TO_J6_SIGN = +1.0
+J6_MAX_STEP_DEG  = 45.0
+
+# -------------------------
 # ✅ 7/9 step try config (7번용 유지)
 # -------------------------
 STEP_TRY_LIST_DEFAULT = [STEP_SCALE_DEFAULT, 0.05, 0.02, 0.01]
-
-# ============================================================
-# ✅ SPEED CONFIG (여기서 %로 조절)
-# ============================================================
-MOVE_CART_VEL_DEFAULT = 30.0          # ✅ 안전 시작 (100 -> 30)
-MOVE_CART_VEL_FALLBACKS = [15.0, 8.0, 3.0]
-MOVE_CART_VEL_LIST = [MOVE_CART_VEL_DEFAULT] + MOVE_CART_VEL_FALLBACKS
-
-MOVE_CART_ACC = 80.0                  # ✅ 가속도 낮게
-#MOVE_CART_DEC = 80.0                  # (지금 move_step.py에선 안 쓰지만 같이 둠)
-
-MOVE_CART_OVL = 20.0                  # ✅ override(%) 안전 시작 (20%)
-MOVE_CART_BLENDT = -1.0               # ✅ blending time (보통 -1 = off/기본)
-MOVE_CART_EX = 0                      # ✅ 확장옵션/모드 (기본 0)
-
-MOVEJ_VEL_RETURN = 60.0
-MOVEJ_BLENDT_RETURN = -1.0
-
-# ✅ 11번용 MoveJ 속도
-MOVEJ_VEL_WP11 = 30.0
-MOVEJ_BLENDT_WP11 = -1.0
 
 # -------------------------
 # ✅ 9번(자동) safety
