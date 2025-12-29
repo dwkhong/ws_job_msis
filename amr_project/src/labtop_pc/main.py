@@ -23,15 +23,13 @@ from robot import smooth_auto as sa
 from robot import stack_cycle as sc
 
 
-
-
 def print_menu(robot_connected: bool, robot_ip: str):
     print("\n=======================================")
     print("무엇을 할까요?")
     print("  0 : 로봇 연결/해제 (토글)")
     print("  1 : 현재 tcp_pose + joint(deg) 읽기 (last_tcp_pose 저장, 최초 1회 initial_joint6 저장)")
-    print("  2 : 비전 측정 실행 (moveXYZ/angle) (last_measure 저장)")
-    print("  3 : target_pose 생성 (1+2 결과 결과를 합쳐서 저장)")
+    print("  2 : 비전 측정 실행 (camXYZ/angle 또는 moveXYZ/angle) (last_measure 저장)")
+    print("  3 : target_pose 생성 (1+2 결과 합쳐서 저장)  ✅(ry 보정 포함)")
     print("  4 : ✅ IK 점검/자세 보정 (target_pose)")
     print("  5 : ✅ angle_deg 만큼 J6 회전 (MoveJ)")
     print("  6 : ✅ MoveCart 1-step (phase0: XY+Zhold / phase1: Zdown)")
@@ -44,6 +42,21 @@ def print_menu(robot_connected: bool, robot_ip: str):
     print(f"  상태: {'CONNECTED ✅' if robot_connected else 'DISCONNECTED ❌'}")
     print(f"  IP  : {robot_ip}")
     print("=======================================")
+
+
+def _print_measure(res: dict):
+    """measure 결과를 사람이 보기 좋게 출력 (camXYZ or moveXYZ 둘 다 지원)"""
+    angle = float(res.get("angle_deg", 0.0))
+
+    if "cam_x_mm" in res and "cam_y_mm" in res and "cam_z_mm" in res:
+        print(f"camXYZ(mm) = ({float(res['cam_x_mm']):+.1f}, {float(res['cam_y_mm']):+.1f}, {float(res['cam_z_mm']):+.1f})")
+    elif "move_x_mm" in res and "move_y_mm" in res and "move_z_mm" in res:
+        print(f"moveXYZ(mm)= ({float(res['move_x_mm']):+.1f}, {float(res['move_y_mm']):+.1f}, {float(res['move_z_mm']):+.1f})")
+    else:
+        # 모르는 형태면 통째로 보여줌
+        print("measure_res:", res)
+
+    print(f"angle(deg)  = {angle:+.2f}")
 
 
 def main():
@@ -60,7 +73,7 @@ def main():
     state = {
         "gripper_activated": False,
         "gripper_closed": None,   # True/False/None
-        "stack_counter": 0,   # ✅ 추가
+        "stack_counter": 0,
     }
 
     # (나중 확장 대비)
@@ -110,12 +123,10 @@ def main():
                 print(f"[FAIL] err_p={e1}, err_j={e2}\n")
                 continue
 
-            # ✅ 1번 결과 저장
             last_tcp_pose = pose6
 
-            # ✅ 최초 1회: initial_joint6 저장
             if initial_joint6 is None:
-                initial_joint6 = joint6[:]  # copy
+                initial_joint6 = joint6[:]
                 print("[INIT] initial_joint6 저장 ✅ (1번 최초 실행 기준)")
                 print("init_joint:", rs.fmt_joint(initial_joint6))
 
@@ -125,10 +136,6 @@ def main():
             print()
 
         elif cmd == "2":
-            if robot is None:
-                print("[WARN] 로봇이 연결되어 있지 않습니다. (0번으로 먼저 연결)\n")
-                continue
-
             print("\n[ACTION] Vision measure...")
             try:
                 res = mb.measure_box()  # dict 또는 None
@@ -140,12 +147,10 @@ def main():
                 print("[FAIL] 측정 실패(None)\n")
                 continue
 
-            # ✅ 2번 결과 저장
             last_measure = res
 
             print("[OK] 측정 결과 ✅ (last_measure 저장됨)")
-            print(f"moveXYZ(mm) = ({float(res['move_x_mm']):+.1f}, {float(res['move_y_mm']):+.1f}, {float(res['move_z_mm']):+.1f})")
-            print(f"angle(deg)  = {float(res.get('angle_deg', 0.0)):+.2f}")
+            _print_measure(res)
             if "video_path" in res:
                 print(f"video_path = {res['video_path']}")
             print()
@@ -155,17 +160,40 @@ def main():
                 print("\n[WARN] 1,2번 먼저 실행해야 합니다. (last_tcp_pose / last_measure 필요)\n")
                 continue
 
-            last_target_pose = tp.build_target_pose(last_tcp_pose, last_measure)
+            try:
+                # ✅ 디버그 포함 버전 우선 사용 (있으면 moveXYZ/angle 같이 출력 가능)
+                if hasattr(tp, "build_target_pose_with_debug"):
+                    out = tp.build_target_pose_with_debug(last_tcp_pose, last_measure)
+                    last_target_pose = out["target_pose6"]
 
-            # 상태 초기화
+                    print("\n[OK] target_pose 생성/저장 ✅ (orientation 유지)")
+                    print("current_pose :", tp.fmt_pose6(last_tcp_pose))
+                    print("target_pose  :", tp.fmt_pose6(last_target_pose))
+
+                    print(
+                        "moveXYZ(mm)  : "
+                        f"({float(out['move_x_mm']):+.1f}, {float(out['move_y_mm']):+.1f}, {float(out['move_z_mm']):+.1f})"
+                    )
+                    print(f"angle(deg)   : {float(out.get('angle_deg', 0.0)):+.2f}")
+
+                else:
+                    # ✅ fallback
+                    last_target_pose = tp.build_target_pose(last_tcp_pose, last_measure)
+
+                    print("\n[OK] target_pose 생성/저장 ✅ (orientation 유지)")
+                    print("current_pose :", tp.fmt_pose6(last_tcp_pose))
+                    print("target_pose  :", tp.fmt_pose6(last_target_pose))
+
+            except Exception as e:
+                print(f"\n[ERROR] target_pose 생성 실패: {e}\n")
+                continue
+
+            # 이후 7번(이동)에서 쓸 상태 초기화
             approach_phase = 0
             reached_final = False
-
-            print("\n[OK] target_pose 생성/저장 ✅")
-            print("current_pose :", tp.fmt_pose6(last_tcp_pose))
-            print("target_pose  :", tp.fmt_pose6(last_target_pose))
             print("phase        : 0 (XY+Zhold)")
             print()
+
 
         elif cmd == "4":
             if robot is None:
@@ -175,7 +203,6 @@ def main():
                 print("[WARN] target_pose가 없습니다. 3번을 먼저 실행하세요.\n")
                 continue
 
-            # ✅ 현재 상태 읽기
             (e1, cur_pose6), (e2, cur_joint6) = rs.read_pose_joint(robot, reconnect=reconnect)
             if e1 != 0 or e2 != 0:
                 print(f"[FAIL] err_p={e1}, err_j={e2}\n")
@@ -205,7 +232,6 @@ def main():
                 print()
                 continue
 
-            # ✅ target 업데이트
             last_target_pose = out["target"]
 
             if out.get("adjusted", False):
@@ -222,7 +248,6 @@ def main():
             if out.get("step_phase0") is not None:
                 print("  step0 :", ika.fmt_pose6(out["step_phase0"]))
             print()
-
 
         elif cmd == "5":
             if robot is None:
@@ -264,7 +289,6 @@ def main():
                 print(f"[CMD7-step] ❌ {out['msg']}\n")
                 continue
 
-            # 상태 갱신
             approach_phase = int(out["new_phase"])
             reached_final = bool(out["reached_final"])
 
@@ -297,7 +321,6 @@ def main():
                 print(f"\n[FAIL] {out['msg']}\n")
                 continue
 
-            # ✅ 복귀 성공 시 상태 리셋
             approach_phase = 0
             reached_final = False
             print("\n[RESET] phase=0, reached_final=False 로 초기화 ✅\n")
@@ -312,13 +335,16 @@ def main():
                 reconnect=reconnect,
                 state=state
             )
-            
+
         elif cmd == "9":
             if robot is None:
                 print("[WARN] 로봇이 연결되어 있지 않습니다. (0번으로 먼저 연결)\n")
                 continue
             if last_target_pose is None:
                 print("[WARN] target_pose가 없습니다. 3번/4번을 먼저 실행하세요.\n")
+                continue
+            if last_measure is None:
+                print("[WARN] last_measure가 없습니다. 2번(비전 측정)을 먼저 실행하세요.\n")
                 continue
 
             out = sa.cmd9_smooth_auto(
@@ -334,7 +360,6 @@ def main():
 
             if not out["ok"]:
                 print(f"[CMD9] ❌ {out['msg']}\n")
-                # 디버그용(있으면 출력)
                 if out.get("phase0") is not None:
                     print("  phase0:", rs.fmt_pose6(out["phase0"]))
                 if out.get("zdown") is not None:
@@ -345,8 +370,7 @@ def main():
             reached_final = True
             approach_phase = 0
             print(f"[CMD9] ✅ {out['msg']}\n")
-            
-            
+
         elif cmd == "10":
             if robot is None:
                 print("[WARN] 로봇이 연결되어 있지 않습니다. (0번으로 먼저 연결)\n")
@@ -368,7 +392,6 @@ def main():
                 print(f"[CMD11] ❌ {out['msg']}\n")
             else:
                 print(f"[CMD11] ✅ {out['msg']}\n")
-            
 
         elif cmd == "q":
             print("[EXIT] 종료합니다.")
@@ -383,3 +406,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -18,18 +18,6 @@ class VisionConfig:
     box_w_mm: float = 230.0
     box_h_mm: float = 95.0
 
-    # Camera -> Gripper offset (mm)
-    off_x_mm: float = -15.0
-    off_y_mm: float = -70.0
-    off_z_mm: float = -150.0
-
-    # base yaw offset (deg)
-    base_yaw_offset_deg: float = -135.0
-
-    # flip move axis
-    flip_move_x: bool = False
-    flip_move_y: bool = False
-
     # sampling
     avg_n: int = 10
     timeout_sec: float = 25.0
@@ -52,7 +40,7 @@ class VisionConfig:
     max_consec_skips_reset: int = 15
 
     # preview / overlay
-    show_preview: bool = False
+    show_preview: bool = True
     preview_win_name: str = "OBB + center"
     show_overlay: bool = True
     overlay_font_scale: float = 0.6

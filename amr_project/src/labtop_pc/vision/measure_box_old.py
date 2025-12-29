@@ -11,11 +11,15 @@ from .vision_config import VisionConfig, DEFAULT_VISION_CONFIG
 
 
 # -----------------------------
-# Local helpers
+# Local helpers (utils 분리 안 함)
 # -----------------------------
 def clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
+def rot2d_xy(x, y, deg):
+    rad = np.deg2rad(deg)
+    c, s = np.cos(rad), np.sin(rad)
+    return (c * x - s * y), (s * x + c * y)
 
 def poly_shrink_towards_center(poly4x2: np.ndarray, margin_px: float):
     p = poly4x2.astype(np.float32)
@@ -23,7 +27,6 @@ def poly_shrink_towards_center(poly4x2: np.ndarray, margin_px: float):
     v = p - c
     norm = np.linalg.norm(v, axis=1, keepdims=True) + 1e-6
     return p - (v / norm) * margin_px
-
 
 def depth_roi_stats(depth_u16: np.ndarray, depth_scale: float, poly4x2: np.ndarray, cfg: VisionConfig):
     h, w = depth_u16.shape[:2]
@@ -41,12 +44,10 @@ def depth_roi_stats(depth_u16: np.ndarray, depth_scale: float, poly4x2: np.ndarr
     mad = float(np.median(np.abs(d - med)))
     return med, mad, int(d.size)
 
-
 def edges_long_short_px(poly4x2: np.ndarray):
     p = poly4x2.astype(np.float32)
     edges = [np.linalg.norm(p[(i + 1) % 4] - p[i]) for i in range(4)]
     return float(max(edges)), float(min(edges))
-
 
 def estimate_Z_from_size(poly4x2: np.ndarray, intr, W_mm: float, H_mm: float) -> float:
     long_px, short_px = edges_long_short_px(poly4x2)
@@ -62,12 +63,10 @@ def estimate_Z_from_size(poly4x2: np.ndarray, intr, W_mm: float, H_mm: float) ->
 
     return float(0.5 * (Z1 + Z2))  # meters
 
-
 def XY_from_pixel_and_Z(cx: int, cy: int, intr, Z_m: float):
     X = (cx - intr.ppx) / intr.fx * Z_m
     Y = (cy - intr.ppy) / intr.fy * Z_m
     return float(X), float(Y)  # meters
-
 
 def size_consistency_check(poly4x2, intr, Z_use_m, W_mm, H_mm, rel_err_max=0.25):
     long_px, short_px = edges_long_short_px(poly4x2)
@@ -81,8 +80,8 @@ def size_consistency_check(poly4x2, intr, Z_use_m, W_mm, H_mm, rel_err_max=0.25)
     err1 = abs(L1_mm - W_big) / max(1e-6, W_big)
     err2 = abs(L2_mm - H_sml) / max(1e-6, H_sml)
 
-    return (err1 <= rel_err_max) and (err2 <= rel_err_max)
-
+    ok = (err1 <= rel_err_max) and (err2 <= rel_err_max)
+    return ok
 
 def obb_angle_deg_upright0_rightplus(poly4x2: np.ndarray) -> float:
     p = poly4x2.astype(np.float32)
@@ -100,7 +99,6 @@ def obb_angle_deg_upright0_rightplus(poly4x2: np.ndarray) -> float:
     angle = -angle
     return angle
 
-
 def is_jump(prev, cur, cfg: VisionConfig):
     if prev is None:
         return False
@@ -114,12 +112,10 @@ def is_jump(prev, cur, cfg: VisionConfig):
         return True
     return False
 
-
 def draw_overlay_xyz_angle(img, Xmm, Ymm, Zmm, angle, cfg: VisionConfig):
     if not cfg.show_overlay:
         return
-
-    line1 = f"cam X {Xmm:+.1f}  Y {Ymm:+.1f}  Z {Zmm:+.1f}  (mm)"
+    line1 = f"X {Xmm:+.1f}  Y {Ymm:+.1f}  Z {Zmm:+.1f}  (mm)"
     line2 = f"angle {angle:+.2f} deg"
 
     x, y = 10, 14
@@ -162,7 +158,7 @@ def measure_box(cfg: VisionConfig = DEFAULT_VISION_CONFIG) -> Optional[Dict[str,
     spatial.set_option(rs.option.filter_smooth_alpha, 0.5)
     spatial.set_option(rs.option.filter_smooth_delta, 20)
 
-    accepted_xyza = []  # [[Xmm,Ymm,Zmm,angle], ...]
+    accepted = []
     prev_valid = None
     consec_skips = 0
     t0 = time.time()
@@ -281,10 +277,14 @@ def measure_box(cfg: VisionConfig = DEFAULT_VISION_CONFIG) -> Optional[Dict[str,
             angle = obb_angle_deg_upright0_rightplus(poly)
 
             cur = {
+                "conf": float(cf),
+                "cls": int(ci),
                 "Xmm": X_m * 1000.0,
                 "Ymm": Y_m * 1000.0,
                 "Zmm": Z_use_m * 1000.0,
                 "angle": float(angle),
+                "num_boxes": int(num_boxes),
+                "chosen_dist_to_img_center_px": float(chosen_dist_px),
             }
 
             ok_sz = size_consistency_check(poly, intr, Z_use_m, cfg.box_w_mm, cfg.box_h_mm, rel_err_max=cfg.size_rel_err_max)
@@ -294,7 +294,7 @@ def measure_box(cfg: VisionConfig = DEFAULT_VISION_CONFIG) -> Optional[Dict[str,
                     prev_valid = None
                     consec_skips = 0
 
-                last_disp.update(cur)
+                last_disp.update({"Xmm": cur["Xmm"], "Ymm": cur["Ymm"], "Zmm": cur["Zmm"], "angle": cur["angle"]})
                 if cfg.show_preview:
                     draw_overlay_xyz_angle(vis, cur["Xmm"], cur["Ymm"], cur["Zmm"], cur["angle"], cfg)
                     cv2.imshow(cfg.preview_win_name, vis)
@@ -305,9 +305,9 @@ def measure_box(cfg: VisionConfig = DEFAULT_VISION_CONFIG) -> Optional[Dict[str,
             # accept
             consec_skips = 0
             prev_valid = cur
-            accepted_xyza.append([cur["Xmm"], cur["Ymm"], cur["Zmm"], cur["angle"]])
+            accepted.append(cur)
 
-            last_disp.update(cur)
+            last_disp.update({"Xmm": cur["Xmm"], "Ymm": cur["Ymm"], "Zmm": cur["Zmm"], "angle": cur["angle"]})
 
             if cfg.show_preview:
                 draw_overlay_xyz_angle(vis, cur["Xmm"], cur["Ymm"], cur["Zmm"], cur["angle"], cfg)
@@ -316,17 +316,40 @@ def measure_box(cfg: VisionConfig = DEFAULT_VISION_CONFIG) -> Optional[Dict[str,
                     return None
 
             if cfg.print_selected_each_accept:
-                print(f"[{len(accepted_xyza)}/{cfg.avg_n}] picked=1/{num_boxes}  dist_to_img_center={chosen_dist_px:.1f}px  conf={cf:.2f}  cls={ci}")
+                print(f"[{len(accepted)}/{cfg.avg_n}] picked=1/{num_boxes}  dist_to_img_center={chosen_dist_px:.1f}px  conf={cf:.2f}  cls={ci}")
 
-            if len(accepted_xyza) >= cfg.avg_n:
+            if len(accepted) >= cfg.avg_n:
                 break
 
-        cam_mean = np.mean(np.array(accepted_xyza, dtype=np.float32), axis=0)
+        cam_arr = np.array([[a["Xmm"], a["Ymm"], a["Zmm"], a["angle"]] for a in accepted], dtype=np.float32)
+        cam_mean = cam_arr.mean(axis=0)
+        angle_mean = float(cam_mean[3])
+
+        g_list = []
+        for a in accepted:
+            gx = a["Xmm"] + cfg.off_x_mm
+            gy = a["Ymm"] + cfg.off_y_mm
+            gz = a["Zmm"] + cfg.off_z_mm
+            g_list.append([gx, gy, gz])
+        g_mean = np.array(g_list, dtype=np.float32).mean(axis=0)
+
+        gx, gy, gz = float(g_mean[0]), float(g_mean[1]), float(g_mean[2])
+
+        dx0 = -gx
+        dy0 = +gy
+        dz0 = -gz
+
+        dx1, dy1 = rot2d_xy(dx0, dy0, cfg.base_yaw_offset_deg)
+        if cfg.flip_move_x:
+            dx1 = -dx1
+        if cfg.flip_move_y:
+            dy1 = -dy1
+
         return {
-            "cam_x_mm": float(cam_mean[0]),
-            "cam_y_mm": float(cam_mean[1]),
-            "cam_z_mm": float(cam_mean[2]),
-            "angle_deg": float(cam_mean[3]),
+            "move_x_mm": float(dx1),
+            "move_y_mm": float(dy1),
+            "move_z_mm": float(dz0),
+            "angle_deg": float(angle_mean),
         }
 
     finally:
@@ -339,4 +362,3 @@ def measure_box(cfg: VisionConfig = DEFAULT_VISION_CONFIG) -> Optional[Dict[str,
                 cv2.destroyWindow(cfg.preview_win_name)
             except Exception:
                 pass
-

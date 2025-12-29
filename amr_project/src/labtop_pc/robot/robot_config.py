@@ -1,5 +1,32 @@
 # robot_config.py
 
+ # Camera -> Gripper offset (mm)
+
+APPLY_TCP_RY_TO_MOVE = True
+TCP_RY_SIGN = +1.0
+TCP_RY_GAIN = 1.0
+
+# ✅ 수평일 때 실제 ry 값으로 설정
+TCP_RY_REF_DEG = 2.0   # 예: 수평일 때 ry가 2.0이면 2.0 넣기
+
+# -----------------------------
+# ✅ Camera -> Gripper Offset (mm)
+# -----------------------------
+OFF_X_MM = -15.0
+OFF_Y_MM = -70.0
+OFF_Z_MM = -150.0
+
+# ============================================================
+# ✅ 로봇 베이스가 "왼쪽으로 약 135도" 회전한 상태 보정
+# ============================================================
+BASE_YAW_OFFSET_DEG = 0
+
+# ============================================================
+# ✅ 축 부호가 뒤집히는 케이스 대응 (딱 여기서만 뒤집기)
+# ============================================================
+FLIP_MOVE_X = False
+FLIP_MOVE_Y = False
+
 # -------------------------
 # Tool / User coordinate IDs (MoveCart 등에 사용)
 # -------------------------
@@ -60,7 +87,7 @@ MOVE_CART_ACC = 80.0                  # ✅ 가속도 낮게
 
 MOVE_CART_OVL = 20.0                  # ✅ override(%) 안전 시작 (20%)
 MOVE_CART_BLENDT = -1.0               # ✅ blending time (보통 -1 = off/기본)
-MOVE_CART_EX = 0                      # ✅ 확장옵션/모드 (기본 0)
+MOVE_CART_EX = -1                     # ✅ 확장옵션/모드 (기본 0)
 
 MOVEJ_VEL_RETURN = 60.0
 MOVEJ_BLENDT_RETURN = -1.0

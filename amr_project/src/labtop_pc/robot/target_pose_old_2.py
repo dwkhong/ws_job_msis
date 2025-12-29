@@ -103,9 +103,3 @@ def fmt_pose6(pose6: Pose6) -> str:
     return f"[x,y,z,rx,ry,rz]=[{x:.3f}, {y:.3f}, {z:.3f}, {rx:.3f}, {ry:.3f}, {rz:.3f}]"
 
 
-
-
-
-
-
-
