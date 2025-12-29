@@ -37,7 +37,7 @@ def print_menu(robot_connected: bool, robot_ip: str):
     print("  6 : ✅ MoveCart 1-step (phase0: XY+Zhold / phase1: Zdown)")
     print("  7 : 프로그램 시작(초기) 위치로 복귀 (MoveJ initial_joint6)")
     print("  8 : ✅ Gripper Open/Close/Toggle ✅")
-    print("  9 : ✅ Smooth Auto (phase0 검증/보정 -> phase0 한번에 -> J6 -> Zdown 한번에) ✅")
+    print("  9 : Smooth Auto (phase0 검증/보정 -> phase0 한번에 -> J6 -> Zdown 한번에) ✅")
     print(" 10 : ✅ STACK Cycle (A -> DROP(z+48*cnt) -> OPEN -> A -> HOME, cnt++) ✅")
     print("  q : 종료")
     print("---------------------------------------")
