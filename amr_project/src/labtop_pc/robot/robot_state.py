@@ -1,6 +1,6 @@
 # robot/robot_state.py
 import time
-from robot_config import RPC_RETRY, RPC_RETRY_SLEEP_SEC
+from .robot_config import RPC_RETRY, RPC_RETRY_SLEEP_SEC
 
 # -------------------------
 # Utils (출력/검증)

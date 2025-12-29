@@ -7,6 +7,12 @@ RPC_RETRY_SLEEP_SEC = 0.25
 # IK reference (Fairino SDK에서 보통 0 사용)
 IK_REF = 0
 
+# -------------------------
+# Tool / User coordinate IDs (MoveCart 등에 사용)
+# -------------------------
+TOOL_ID = 0
+USER_ID = 0
+
 # CMD4 search limits
 SEARCH_TIMEOUT_SEC = 6.0
 SEARCH_MAX_TRIES = 900
@@ -19,18 +25,25 @@ SEARCH_RY_LIST = [0, 1, -1, 2, -2, 3, -3, 5, -5, 8, -8, 12, -12, 15, -15]
 # ============================================================
 # ✅ SPEED CONFIG (여기서 %로 조절)
 # ============================================================
-MOVE_CART_VEL_DEFAULT = 100.0
-MOVE_CART_VEL_FALLBACKS = [10.0, 5.0, 3.0]     # 실패/112 나오면 순차 적용
+MOVE_CART_VEL_DEFAULT = 30.0          # ✅ 안전 시작 (100 -> 30)
+MOVE_CART_VEL_FALLBACKS = [15.0, 8.0, 3.0]
 MOVE_CART_VEL_LIST = [MOVE_CART_VEL_DEFAULT] + MOVE_CART_VEL_FALLBACKS
 
-MOVEJ_VEL_J6 = 100.0
+MOVE_CART_ACC = 80.0                  # ✅ 가속도 낮게
+MOVE_CART_DEC = 80.0                  # (지금 move_step.py에선 안 쓰지만 같이 둠)
+
+MOVE_CART_OVL = 20.0                  # ✅ override(%) 안전 시작 (20%)
+MOVE_CART_BLENDT = -1.0               # ✅ blending time (보통 -1 = off/기본)
+MOVE_CART_EX = 0                      # ✅ 확장옵션/모드 (기본 0)
+
+MOVEJ_VEL_J6 = 60.0
 MOVEJ_BLENDT_J6 = -1.0
 
-MOVEJ_VEL_RETURN = 100.0
+MOVEJ_VEL_RETURN = 60.0
 MOVEJ_BLENDT_RETURN = -1.0
 
 # ✅ 11번용 MoveJ 속도
-MOVEJ_VEL_WP11 = 100.0
+MOVEJ_VEL_WP11 = 30.0
 MOVEJ_BLENDT_WP11 = -1.0
 
 # -------------------------

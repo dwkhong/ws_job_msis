@@ -2,9 +2,9 @@
 import sys
 import time
 
-HOME_PC_DIR = r"C:\Users\82105\ws_job_msis\amr_project\src\home_pc"
-if HOME_PC_DIR not in sys.path:
-    sys.path.insert(0, HOME_PC_DIR)
+LAB_PC_DIR = r"C:\Users\rhdeh\ws_job_msis\amr_project\src\labtop_pc"
+if LAB_PC_DIR not in sys.path:
+    sys.path.insert(0, LAB_PC_DIR)
 
 from app_config import ROBOT_IP_DEFAULT
 
@@ -131,7 +131,7 @@ def main():
 
             print("\n[ACTION] Vision measure...")
             try:
-                res = mb.measure()  # dict 또는 None
+                res = mb.measure_box()  # dict 또는 None
             except Exception as e:
                 print(f"[ERROR] Vision measure 예외: {e}\n")
                 res = None
@@ -183,13 +183,12 @@ def main():
 
             print("\n[ACTION] CMD4 IK check + adjust (target + phase0 + step_phase0)...")
 
-            out = ika.cmd4_check_and_adjust_target_with_phase0(
+            out = ika.cmd4_check_and_adjust_target_only(
                 robot=robot,
                 reconnect=reconnect,
                 cur_pose6=cur_pose6,
                 cur_joint6=cur_joint6,
                 target_pose6=last_target_pose,
-                step_scale=rc.STEP_SCALE_DEFAULT,   # ✅ step_scale을 cmd7 느낌 그대로 사용
             )
 
             if not out.get("ok", False):
@@ -348,7 +347,7 @@ def main():
             print(f"[CMD9] ✅ {out['msg']}\n")
             
             
-        elif cmd == "11":
+        elif cmd == "10":
             if robot is None:
                 print("[WARN] 로봇이 연결되어 있지 않습니다. (0번으로 먼저 연결)\n")
                 continue
