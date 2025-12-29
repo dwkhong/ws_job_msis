@@ -8,6 +8,8 @@ if HOME_PC_DIR not in sys.path:
 
 from app_config import ROBOT_IP_DEFAULT
 
+from robot import j4_rotate as j4r
+
 # ✅ home_pc 기준 패키지 import (robot/, vision/에 __init__.py 있어야 함)
 from robot import robot_config as rc
 from robot import connect_fairino as cf
@@ -39,6 +41,7 @@ def print_menu(robot_connected: bool, robot_ip: str):
     print("  8 : ✅ Gripper Open/Close/Toggle ✅")
     print("  9 : ✅ Smooth Auto (phase0 검증/보정 -> phase0 한번에 -> J6 -> Zdown 한번에) ✅")
     print(" 10 : ✅ STACK Cycle (A -> DROP(z+48*cnt) -> OPEN -> A -> HOME, cnt++) ✅")
+    print(" 11 : ✅ J4 수동 회전 (deg 입력 -> MoveJ) ✅")
     print("  q : 종료")
     print("---------------------------------------")
     print(f"  상태: {'CONNECTED ✅' if robot_connected else 'DISCONNECTED ❌'}")
@@ -348,7 +351,7 @@ def main():
             print(f"[CMD9] ✅ {out['msg']}\n")
             
             
-        elif cmd == "11":
+        elif cmd == "10":
             if robot is None:
                 print("[WARN] 로봇이 연결되어 있지 않습니다. (0번으로 먼저 연결)\n")
                 continue
@@ -369,7 +372,28 @@ def main():
                 print(f"[CMD11] ❌ {out['msg']}\n")
             else:
                 print(f"[CMD11] ✅ {out['msg']}\n")
-            
+
+
+        elif cmd == "11":  # ✅ J4 입력 회전
+            if robot is None:
+                print("[ERR] 로봇 연결부터 해 (0번)")
+                continue
+
+            s = input("J4 delta(deg) 입력 (예: 5, -10): ").strip()
+            try:
+                delta = float(s)
+            except Exception:
+                print("[ERR] 숫자로 입력해")
+                continue
+
+            ok, d, err = j4r.rotate_j4_from_input(
+                robot=robot,
+                delta_deg=delta,
+                tool=0,
+                user=0,
+                reconnect=reconnect,
+            )
+            print(f"[DONE] ok={ok}, delta={d:+.3f}, err={err}\n")
 
         elif cmd == "q":
             print("[EXIT] 종료합니다.")
