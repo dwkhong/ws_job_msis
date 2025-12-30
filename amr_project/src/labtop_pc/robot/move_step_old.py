@@ -1,3 +1,4 @@
+# robot/move_step.py
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
@@ -9,6 +10,7 @@ from . import robot_config as rc
 def _has_solution(robot, pose6: List[float], cur_joint6: List[float], reconnect=None) -> bool:
     """
     IK solvable check
+    Fairino: GetInverseKinHasSolution(ref=0, pose, cur_joint)
     """
     pose6 = rs.ensure_pose6(pose6)
     cur_joint6 = rs.ensure_joint6(cur_joint6)
@@ -36,6 +38,8 @@ def _blend_pose_axis(cur_pose6: List[float],
                      ori_scale: float) -> List[float]:
     """
     axis-wise partial step
+      - xyz: clamp towards target
+      - rpy: linear blend with ori_scale
     """
     cur = rs.ensure_pose6(cur_pose6)
     tgt = rs.ensure_pose6(target_pose6)
@@ -72,6 +76,10 @@ def _z_reached(cur_pose6: List[float], z_target: float, tol_mm: float) -> bool:
 
 
 def _try_movecart(robot, reconnect, tool: int, user: int, pose6: List[float], vel_list: List[float]) -> int:
+    """
+    MoveCart 한번 시도(vel fallback 포함)
+    return: 0 ok, 112 or other fail
+    """
     pose6 = rs.ensure_pose6(pose6)
 
     for vv in vel_list:
@@ -91,6 +99,7 @@ def _try_movecart(robot, reconnect, tool: int, user: int, pose6: List[float], ve
             return 0
         if rtn == 112:
             continue
+        # 그 외도 다음 vel로 계속 시도(너 기존 정책과 동일)
         continue
     return 112
 
@@ -109,7 +118,14 @@ def do_one_movecart_step(
     step_scale_default: float,
 ) -> Tuple[bool, Optional[List[float]], Optional[List[float]], int, bool, Dict[str, Any]]:
     """
-    ✅ 수정됨: STEP_SCALE_DEFAULT와 X_SCALE_MULT를 계산에 명확히 반영
+    ✅ CMD7: 버튼 1번 눌렀을 때 MoveCart "1-step"만 수행
+    return:
+      moved(bool),
+      pose_after(or None),
+      joint_after(or None),
+      new_phase(int),
+      done(bool),
+      debug(dict)
     """
     dbg: Dict[str, Any] = {}
     target_pose6 = rs.ensure_pose6(target_pose6)
@@ -117,30 +133,29 @@ def do_one_movecart_step(
     cur_joint6 = rs.ensure_joint6(cur_joint6)
 
     z_hold = float(target_pose6[2]) + float(rc.Z_HOLD_OFFSET_MM)
-    
-    # 기본 스케일 값 (예: 0.4)
-    base_s = float(step_scale_default)
 
+    # Phase definition
     if int(approach_phase) == 0:
+        # phase0: XY 맞추면서 Z는 z_hold
         phase_target_pose = target_pose6[:]
         phase_target_pose[2] = z_hold
-        xy_scale_candidates = [1.0]
-        ori_scale_candidates = [1.0]
-    else:
-        phase_target_pose = target_pose6[:]
-        xy_scale_candidates = [0.0, 0.01, 0.02]
-        ori_scale_candidates = [0.0]
 
-    # step_try_list (예: [1.0, 0.8, 0.5])를 순회하며 시도
-    for retry_rate in step_try_list:
-        # 실제 적용할 기준 스케일 (base_s * retry_rate)
-        st = base_s * float(retry_rate)
+        xy_scale_candidates = [1.0]     # XY 적극 이동
+        ori_scale_candidates = [1.0]    # 자세도 target 따라감(기존 그대로)
+    else:
+        # phase1: Z만 내려감
+        phase_target_pose = target_pose6[:]
+
+        xy_scale_candidates = [0.0, 0.01, 0.02]  # XY 거의 고정
+        ori_scale_candidates = [0.0]             # 자세 고정
+
+    for st in step_try_list:
+        st = float(st)
 
         for xy_s in xy_scale_candidates:
             xy_s = float(xy_s)
 
             if int(approach_phase) == 0:
-                # ✅ X축은 멀티플라이어 적용 (최대 1.0)
                 sx = min(1.0, st * float(rc.X_SCALE_MULT))
                 sy = st
                 sz = st
@@ -156,15 +171,19 @@ def do_one_movecart_step(
                     _blend_pose_axis(cur_pose6, phase_target_pose, (sx, sy, sz), ori_scale=ori_s)
                 )
 
+                # IK check
                 if not _has_solution(robot, step_pose, cur_joint6, reconnect=reconnect):
                     continue
 
+                # MoveCart try
                 rtn = _try_movecart(robot, reconnect, tool, user, step_pose, vel_list)
                 if rtn != 0:
                     continue
 
+                # after state
                 (e1, pose_after), (e2, joint_after) = rs.read_pose_joint(robot, reconnect=reconnect)
                 if e1 != 0 or e2 != 0:
+                    # 이동은 했는데 상태 못 읽음
                     dbg.update({"used_st": st, "sx": sx, "sy": sy, "sz": sz, "ori_s": ori_s})
                     return True, None, None, int(approach_phase), False, dbg
 
@@ -196,6 +215,9 @@ def cmd7_run(
     reached_final: bool,
     step_scale: Optional[float] = None
 ) -> Dict[str, Any]:
+    """
+    main.py에서 쓰기 편하게 래핑한 CMD7 엔트리
+    """
     out: Dict[str, Any] = {
         "ok": False,
         "moved": False,
@@ -218,7 +240,6 @@ def cmd7_run(
         out["msg"] = f"상태 읽기 실패 err_p={e1}, err_j={e2}"
         return out
 
-    # 기본값 설정 (0.4)
     if step_scale is None:
         step_scale = float(rc.STEP_SCALE_DEFAULT)
 

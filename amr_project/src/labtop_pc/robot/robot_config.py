@@ -1,25 +1,19 @@
 # robot_config.py
 
- # Camera -> Gripper offset (mm)
-
-APPLY_TCP_RY_TO_MOVE = True
-TCP_RY_SIGN = +1.0
-TCP_RY_GAIN = 1.0
-
-# ✅ 수평일 때 실제 ry 값으로 설정
-TCP_RY_REF_DEG = 2.0   # 예: 수평일 때 ry가 2.0이면 2.0 넣기
 
 # -----------------------------
 # ✅ Camera -> Gripper Offset (mm)
 # -----------------------------
-OFF_X_MM = -15.0
+OFF_X_MM = -25.0
 OFF_Y_MM = -70.0
-OFF_Z_MM = -150.0
+OFF_Z_MM = -175.0
+
+PIVOT_LENGTH = 165.0
 
 # ============================================================
 # ✅ 로봇 베이스가 "왼쪽으로 약 135도" 회전한 상태 보정
 # ============================================================
-BASE_YAW_OFFSET_DEG = 0
+BASE_YAW_OFFSET_DEG = -135
 
 # ============================================================
 # ✅ 축 부호가 뒤집히는 케이스 대응 (딱 여기서만 뒤집기)
@@ -60,13 +54,13 @@ MOVEJ_BLENDT_J6 = -1.0
 # -------------------------
 # Step config (7번용 유지)
 # -------------------------
-STEP_SCALE_DEFAULT = 0.3
+STEP_SCALE_DEFAULT = 0.4
 X_SCALE_MULT = 2.0
 
 # -------------------------
 # ✅ 2-Phase approach
 # -------------------------
-Z_HOLD_OFFSET_MM = 70.0
+Z_HOLD_OFFSET_MM = 100.0
 XY_TOL_MM = 1
 Z_TOL_MM  = 2
 
@@ -78,11 +72,11 @@ STEP_TRY_LIST_DEFAULT = [STEP_SCALE_DEFAULT, 0.05, 0.02, 0.01]
 # ============================================================
 # ✅ SPEED CONFIG (여기서 %로 조절)
 # ============================================================
-MOVE_CART_VEL_DEFAULT = 30.0          # ✅ 안전 시작 (100 -> 30)
+MOVE_CART_VEL_DEFAULT = 60.0          # ✅ 안전 시작 (100 -> 30)
 MOVE_CART_VEL_FALLBACKS = [15.0, 8.0, 3.0]
 MOVE_CART_VEL_LIST = [MOVE_CART_VEL_DEFAULT] + MOVE_CART_VEL_FALLBACKS
 
-MOVE_CART_ACC = 80.0                  # ✅ 가속도 낮게
+MOVE_CART_ACC = 30.0                  # ✅ 가속도 낮게
 #MOVE_CART_DEC = 80.0                  # (지금 move_step.py에선 안 쓰지만 같이 둠)
 
 MOVE_CART_OVL = 20.0                  # ✅ override(%) 안전 시작 (20%)
@@ -93,13 +87,12 @@ MOVEJ_VEL_RETURN = 60.0
 MOVEJ_BLENDT_RETURN = -1.0
 
 # ✅ 11번용 MoveJ 속도
-MOVEJ_VEL_WP11 = 30.0
+MOVEJ_VEL_WP11 = 60.0
 MOVEJ_BLENDT_WP11 = -1.0
 
 # -------------------------
 # ✅ 9번(자동) safety
 # -------------------------
-AUTO_MAX_SECONDS = 60.0
 
 # ============================================================
 # ✅ GRIPPER CONFIG (10번/9번 후 자동닫기)
