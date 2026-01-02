@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass
@@ -154,10 +155,8 @@ class _VisionRuntime:
             self._pipeline.start(rs_cfg)
             self._align = rs.align(rs.stream.color)
 
-            if cfg.show_preview:
-                cv2.namedWindow(cfg.preview_win_name, cv2.WINDOW_NORMAL)
-                cv2.resizeWindow(cfg.preview_win_name, cfg.width, cfg.height)
-
+            # ★ [수정됨] 창 생성 코드를 _loop() 스레드 내부로 이동함 (여기서는 삭제)
+            
             self._req_active = False
             self._req_samples = []
             self._req_result = None
@@ -177,9 +176,8 @@ class _VisionRuntime:
         try:
             if self._pipeline: self._pipeline.stop()
         except: pass
-        if self._cfg.show_preview: 
-            try: cv2.destroyAllWindows()
-            except: pass
+        
+        # ★ [수정됨] 창 파괴 코드를 _loop() 스레드의 finally 블록으로 이동함
             
         self._pipeline = None
         self._model = None
@@ -214,112 +212,132 @@ class _VisionRuntime:
                 self._cv.wait(timeout=0.1)
 
     def _loop(self):
-        """ [백그라운드 스레드] 무한 루프 """
+        """ [백그라운드 스레드] 무한 루프 - 여기서 UI 처리도 담당 """
         cfg = self._cfg
         prev_valid = None
         consec_skips = 0
 
-        while self._running:
-            # 1. 프레임 획득
+        # ★ [수정됨] 스레드가 시작될 때 창을 여기서 만듭니다. (응답 없음 방지)
+        if cfg.show_preview:
             try:
-                frames = self._pipeline.wait_for_frames()
-                frames = self._align.process(frames)
-                color_frame = frames.get_color_frame()
-                if not color_frame: continue
-                
-                frame = np.asanyarray(color_frame.get_data())
-                intr = color_frame.profile.as_video_stream_profile().get_intrinsics()
-            except: 
-                continue
+                cv2.namedWindow(cfg.preview_win_name, cv2.WINDOW_NORMAL)
+                cv2.resizeWindow(cfg.preview_win_name, cfg.width, cfg.height)
+            except Exception as e:
+                print(f"[Vision] Window create failed: {e}")
 
-            vis = frame.copy()
-            
-            # 2. YOLO 추론
-            try:
-                results = self._model.predict(frame, imgsz=cfg.imgsz, conf=cfg.conf_thres, verbose=False)
-                r = results[0]
-            except: r = None
-            
-            candidates = []
-            img_cx, img_cy = cfg.width/2, cfg.height/2
-
-            if r and getattr(r, "obb", None) is not None and r.obb.xyxyxyxy is not None:
-                polys = r.obb.xyxyxyxy.cpu().numpy()
-                confs = r.obb.conf.cpu().numpy()
-                
-                for poly, cf in zip(polys, confs):
-                    poly = poly.reshape(4, 2)
-                    cx = np.mean(poly[:, 0])
-                    cy = np.mean(poly[:, 1])
-                    dist2 = (cx - img_cx)**2 + (cy - img_cy)**2
-                    candidates.append((dist2, poly))
-
-            # 3. 데이터 처리
-            current_data = None
-            if candidates:
-                candidates.sort(key=lambda x: x[0]) # 중앙 우선
-                _, poly = candidates[0]
-
-                # ★★★ 핵심: 왜곡 보정된 PnP 계산 ★★★
-                res = solve_pose_pnp_calibrated(poly, intr, cfg)
-
-                if res:
-                    # 화면엔 깔끔하게 녹색 박스만 그리기 (사용자 요청)
-                    poly_i = np.round(poly).astype(np.int32).reshape(-1, 1, 2)
-                    cv2.polylines(vis, [poly_i], True, (0, 255, 0), 2)
-                    cv2.circle(vis, (int(np.mean(poly[:,0])), int(np.mean(poly[:,1]))), 5, (0,0,255), -1)
-
-                    # 값은 보정된 값 사용
-                    cur = {"Xmm": res['X'], "Ymm": res['Y'], "Zmm": res['Z'], "angle": res['A']}
+        try:
+            while self._running:
+                # 1. 프레임 획득
+                try:
+                    frames = self._pipeline.wait_for_frames()
+                    frames = self._align.process(frames)
+                    color_frame = frames.get_color_frame()
+                    if not color_frame: continue
                     
-                    # 튀는 값 필터링
-                    if res['Z'] > 100.0:
-                        if not is_jump(prev_valid, cur, cfg):
-                            prev_valid = cur
-                            consec_skips = 0
-                            current_data = cur
+                    frame = np.asanyarray(color_frame.get_data())
+                    intr = color_frame.profile.as_video_stream_profile().get_intrinsics()
+                except Exception as e: 
+                    # 에러 발생 시 출력 (디버깅용)
+                    print(f"[Vision Loop Err] {e}")
+                    time.sleep(0.1)
+                    continue
+
+                vis = frame.copy()
+                
+                # 2. YOLO 추론
+                try:
+                    results = self._model.predict(frame, imgsz=cfg.imgsz, conf=cfg.conf_thres, verbose=False)
+                    r = results[0]
+                except: r = None
+                
+                candidates = []
+                img_cx, img_cy = cfg.width/2, cfg.height/2
+
+                if r and getattr(r, "obb", None) is not None and r.obb.xyxyxyxy is not None:
+                    polys = r.obb.xyxyxyxy.cpu().numpy()
+                    confs = r.obb.conf.cpu().numpy()
+                    
+                    for poly, cf in zip(polys, confs):
+                        poly = poly.reshape(4, 2)
+                        cx = np.mean(poly[:, 0])
+                        cy = np.mean(poly[:, 1])
+                        dist2 = (cx - img_cx)**2 + (cy - img_cy)**2
+                        candidates.append((dist2, poly))
+
+                # 3. 데이터 처리
+                current_data = None
+                if candidates:
+                    candidates.sort(key=lambda x: x[0]) # 중앙 우선
+                    _, poly = candidates[0]
+
+                    # ★★★ 핵심: 왜곡 보정된 PnP 계산 ★★★
+                    res = solve_pose_pnp_calibrated(poly, intr, cfg)
+
+                    if res:
+                        # 화면엔 깔끔하게 녹색 박스만 그리기 (사용자 요청)
+                        poly_i = np.round(poly).astype(np.int32).reshape(-1, 1, 2)
+                        cv2.polylines(vis, [poly_i], True, (0, 255, 0), 2)
+                        cv2.circle(vis, (int(np.mean(poly[:,0])), int(np.mean(poly[:,1]))), 5, (0,0,255), -1)
+
+                        # 값은 보정된 값 사용
+                        cur = {"Xmm": res['X'], "Ymm": res['Y'], "Zmm": res['Z'], "angle": res['A']}
+                        
+                        # 튀는 값 필터링
+                        if res['Z'] > 100.0:
+                            if not is_jump(prev_valid, cur, cfg):
+                                prev_valid = cur
+                                consec_skips = 0
+                                current_data = cur
+                            else:
+                                consec_skips += 1
+                                if consec_skips > cfg.max_consec_skips_reset: prev_valid = None
                         else:
                             consec_skips += 1
-                            if consec_skips > cfg.max_consec_skips_reset: prev_valid = None
                     else:
                         consec_skips += 1
-            else:
-                consec_skips += 1
-                if consec_skips >= cfg.max_consec_skips_reset: prev_valid = None
-            
-            # 4. 측정 요청 처리
-            with self._lock:
-                if self._req_active:
-                    if time.time() > self._req_deadline:
-                        self._req_active = False # 타임아웃
-                        self._cv.notify_all()
-                    elif current_data:
-                        self._req_samples.append([current_data["Xmm"], current_data["Ymm"], current_data["Zmm"], current_data["angle"]])
-                        
-                        # 목표 개수 도달 시 평균 계산 후 종료
-                        if len(self._req_samples) >= self._req_n:
-                            arr = np.array(self._req_samples)
-                            avg = np.mean(arr, axis=0)
-                            self._req_result = {
-                                "cam_x_mm": float(avg[0]), "cam_y_mm": float(avg[1]), 
-                                "cam_z_mm": float(avg[2]), "angle_deg": float(avg[3])
-                            }
-                            self._req_active = False
-                            self._cv.notify_all()
-
-            # 5. UI 그리기
-            if cfg.show_preview:
-                if prev_valid:
-                    self._last_disp = prev_valid
-                    draw_overlay_xyz_angle(vis, prev_valid["Xmm"], prev_valid["Ymm"], prev_valid["Zmm"], prev_valid["angle"], cfg)
+                        if consec_skips >= cfg.max_consec_skips_reset: prev_valid = None
                 
-                if self._req_active:
-                    cnt = len(self._req_samples)
-                    cv2.putText(vis, f"MEASURING... {cnt}/{self._req_n}", 
-                                (10, 450), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
+                # 4. 측정 요청 처리
+                with self._lock:
+                    if self._req_active:
+                        if time.time() > self._req_deadline:
+                            self._req_active = False # 타임아웃
+                            self._cv.notify_all()
+                        elif current_data:
+                            self._req_samples.append([current_data["Xmm"], current_data["Ymm"], current_data["Zmm"], current_data["angle"]])
+                            
+                            # 목표 개수 도달 시 평균 계산 후 종료
+                            if len(self._req_samples) >= self._req_n:
+                                arr = np.array(self._req_samples)
+                                avg = np.mean(arr, axis=0)
+                                self._req_result = {
+                                    "cam_x_mm": float(avg[0]), "cam_y_mm": float(avg[1]), 
+                                    "cam_z_mm": float(avg[2]), "angle_deg": float(avg[3])
+                                }
+                                self._req_active = False
+                                self._cv.notify_all()
 
-                cv2.imshow(cfg.preview_win_name, vis)
-                if cv2.waitKey(1) == 27: self._running = False
+                # 5. UI 그리기
+                if cfg.show_preview:
+                    if prev_valid:
+                        self._last_disp = prev_valid
+                        draw_overlay_xyz_angle(vis, prev_valid["Xmm"], prev_valid["Ymm"], prev_valid["Zmm"], prev_valid["angle"], cfg)
+                    
+                    if self._req_active:
+                        cnt = len(self._req_samples)
+                        cv2.putText(vis, f"MEASURING... {cnt}/{self._req_n}", 
+                                    (10, 450), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 2)
+
+                    cv2.imshow(cfg.preview_win_name, vis)
+                    # ★ [중요] imshow가 있는 같은 스레드에서 waitKey 호출
+                    if cv2.waitKey(1) == 27: 
+                        self._running = False
+        
+        finally:
+            # ★ [수정됨] 스레드 종료 시 창 닫기 (여기서 닫아야 안전함)
+            if cfg.show_preview:
+                try: cv2.destroyAllWindows()
+                except: pass
 
 
 # 싱글톤 인스턴스 생성
@@ -337,3 +355,7 @@ def stop_stream():
 
 def measure_avg(n: int = 10, timeout_sec: Optional[float] = None) -> Optional[Dict[str, Any]]:
     return _RT.measure_avg(n=n, timeout_sec=timeout_sec)
+
+# ★ [추가됨] AttributeError 해결을 위한 Wrapper 함수
+def is_running() -> bool:
+    return _RT.is_running()

@@ -14,7 +14,7 @@ from robot import j4_rotate as j4r
 from robot import robot_config as rc
 from robot import connect_fairino as cf
 from robot import robot_state as rs
-from vision import measure_box as mb
+from vision import measure_box_test_2 as mb
 from robot import target_pose as tp
 from robot import ik_adjust as ika
 from robot import j6_rotate as j6r
