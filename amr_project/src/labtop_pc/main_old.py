@@ -28,9 +28,9 @@ from robot import stack_cycle as sc
 def print_menu(robot_connected: bool, robot_ip: str):
     print("\n=======================================")
     print("무엇을 할까요?")
-    print("  0 : 로봇 연결/해제 (토글)  (+ 연결되면 비전 스트리밍 ON)")
+    print("  0 : 로봇 연결/해제 (토글)")
     print("  1 : 현재 tcp_pose + joint(deg) 읽기 (last_tcp_pose 저장, 최초 1회 initial_joint6 저장)")
-    print("  2 : 비전 측정 요청 (스트리밍 유지 + 프레임 10개 평균) (last_measure 저장)")
+    print("  2 : 비전 측정 실행 (camXYZ/angle 또는 moveXYZ/angle) (last_measure 저장)")
     print("  3 : target_pose 생성 (1+2 결과 합쳐서 저장)  (ry 보정 포함)")
     print("  4 :  IK 점검/자세 보정 (target_pose)")
     print("  5 :  angle_deg 만큼 J6 회전 (MoveJ)")
@@ -44,20 +44,22 @@ def print_menu(robot_connected: bool, robot_ip: str):
     print("---------------------------------------")
     print(f"  상태: {'CONNECTED ' if robot_connected else 'DISCONNECTED '}")
     print(f"  IP  : {robot_ip}")
-    print(f"  VISION: {'RUNNING' if mb.is_running() else 'STOPPED'}  (ESC=stop)")
+    print(f"  VISION: {'RUNNING' if vision_running else 'STOPPED'}")
     print("=======================================")
 
 
 def _print_measure(res: dict):
+    """measure 결과를 사람이 보기 좋게 출력 (camXYZ or moveXYZ 둘 다 지원)"""
     angle = float(res.get("angle_deg", 0.0))
+
     if "cam_x_mm" in res and "cam_y_mm" in res and "cam_z_mm" in res:
-        print(
-            f"camXYZ(mm) = ({float(res['cam_x_mm']):+.1f}, "
-            f"{float(res['cam_y_mm']):+.1f}, "
-            f"{float(res['cam_z_mm']):+.1f})"
-        )
+        print(f"camXYZ(mm) = ({float(res['cam_x_mm']):+.1f}, {float(res['cam_y_mm']):+.1f}, {float(res['cam_z_mm']):+.1f})")
+    elif "move_x_mm" in res and "move_y_mm" in res and "move_z_mm" in res:
+        print(f"moveXYZ(mm)= ({float(res['move_x_mm']):+.1f}, {float(res['move_y_mm']):+.1f}, {float(res['move_z_mm']):+.1f})")
     else:
+        # 모르는 형태면 통째로 보여줌
         print("measure_res:", res)
+
     print(f"angle(deg)  = {angle:+.2f}")
 
 
@@ -65,17 +67,20 @@ def main():
     robot = None
     robot_ip = ROBOT_IP_DEFAULT
 
+    # ✅ CMD 상태 변수들 (핵심)
     last_tcp_pose = None
     last_measure = None
     last_target_pose = None
     initial_joint6 = None
 
+    # ✅ Gripper 상태
     state = {
         "gripper_activated": False,
-        "gripper_closed": None,
+        "gripper_closed": None,   # True/False/None
         "stack_counter": 0,
     }
 
+    # (나중 확장 대비)
     approach_phase = 0
     reached_final = False
 
@@ -91,17 +96,11 @@ def main():
 
     while True:
         print_menu(robot_connected=(robot is not None), robot_ip=robot_ip)
-        cmd = input("입력 (0/1/2/3/4/5/6/7/8/9/10/11/q) > ").strip().lower()
+        cmd = input("입력 (0/1/2/3/4/5/6/7/8/9/10/q) > ").strip().lower()
 
         if cmd == "0":
             # 토글: 연결돼 있으면 끊고, 아니면 연결
             if robot is not None:
-                # ✅ 비전 스트리밍도 같이 OFF
-                try:
-                    mb.stop_stream()
-                except Exception:
-                    pass
-
                 cf.disconnect(robot)
                 robot = None
                 continue
@@ -112,13 +111,6 @@ def main():
 
             try:
                 robot = cf.connect(robot_ip)
-
-                # ✅ 연결되면 비전 스트리밍 ON
-                try:
-                    mb.start_stream()
-                except Exception as e:
-                    print(f"[WARN] Vision stream start failed: {e}")
-
             except Exception as e:
                 robot = None
                 print(f"[FAIL] 연결 실패: {e}")
@@ -148,25 +140,23 @@ def main():
             print()
 
         elif cmd == "2":
-            # ✅ 스트리밍 유지한 채 "지금부터 10프레임 평균" 요청
-            if not mb.is_running():
-                print("[WARN] 비전 스트리밍이 꺼져있습니다. (0번 연결하면 자동 ON)\n")
-                continue
-
-            print("\n[ACTION] Vision measure request (avg 10 frames)...")
+            print("\n[ACTION] Vision measure...")
             try:
-                res = mb.measure_avg(n=10)  # dict or None
+                res = mb.measure_box()  # dict 또는 None
             except Exception as e:
                 print(f"[ERROR] Vision measure 예외: {e}\n")
                 res = None
 
             if res is None:
-                print("[FAIL] 측정 실패(None) (timeout or no valid samples)\n")
+                print("[FAIL] 측정 실패(None)\n")
                 continue
 
             last_measure = res
+
             print("[OK] 측정 결과 ✅ (last_measure 저장됨)")
             _print_measure(res)
+            if "video_path" in res:
+                print(f"video_path = {res['video_path']}")
             print()
 
         elif cmd == "3":
@@ -175,6 +165,7 @@ def main():
                 continue
 
             try:
+                # ✅ 디버그 포함 버전 우선 사용 (있으면 moveXYZ/angle 같이 출력 가능)
                 if hasattr(tp, "build_target_pose_with_debug"):
                     out = tp.build_target_pose_with_debug(last_tcp_pose, last_measure)
                     last_target_pose = out["target_pose6"]
@@ -190,6 +181,7 @@ def main():
                     print(f"angle(deg)   : {float(out.get('angle_deg', 0.0)):+.2f}")
 
                 else:
+                    # ✅ fallback
                     last_target_pose = tp.build_target_pose(last_tcp_pose, last_measure)
 
                     print("\n[OK] target_pose 생성/저장 ✅ (orientation 유지)")
@@ -200,10 +192,12 @@ def main():
                 print(f"\n[ERROR] target_pose 생성 실패: {e}\n")
                 continue
 
+            # 이후 7번(이동)에서 쓸 상태 초기화
             approach_phase = 0
             reached_final = False
             print("phase        : 0 (XY+Zhold)")
             print()
+
 
         elif cmd == "4":
             if robot is None:
@@ -402,8 +396,8 @@ def main():
                 print(f"[CMD11] ❌ {out['msg']}\n")
             else:
                 print(f"[CMD11] ✅ {out['msg']}\n")
-
-        elif cmd == "11":
+                
+        elif cmd == "11":  # ✅ J4 입력 회전
             if robot is None:
                 print("[ERR] 로봇 연결부터 해 (0번)")
                 continue
@@ -424,6 +418,7 @@ def main():
             )
             print(f"[DONE] ok={ok}, delta={d:+.3f}, err={err}\n")
 
+
         elif cmd == "q":
             print("[EXIT] 종료합니다.")
             break
@@ -431,15 +426,10 @@ def main():
         else:
             print("[WARN] 잘못된 입력입니다.")
 
-    # cleanup
-    try:
-        mb.stop_stream()
-    except Exception:
-        pass
-
     if robot is not None:
         cf.disconnect(robot)
 
 
 if __name__ == "__main__":
     main()
+

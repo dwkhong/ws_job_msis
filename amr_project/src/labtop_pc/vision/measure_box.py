@@ -1,6 +1,7 @@
 from __future__ import annotations
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import time
+import threading
 
 import numpy as np
 import cv2
@@ -42,46 +43,10 @@ def depth_roi_stats(depth_u16: np.ndarray, depth_scale: float, poly4x2: np.ndarr
     return med, mad, int(d.size)
 
 
-def edges_long_short_px(poly4x2: np.ndarray):
-    p = poly4x2.astype(np.float32)
-    edges = [np.linalg.norm(p[(i + 1) % 4] - p[i]) for i in range(4)]
-    return float(max(edges)), float(min(edges))
-
-
-def estimate_Z_from_size(poly4x2: np.ndarray, intr, W_mm: float, H_mm: float) -> float:
-    long_px, short_px = edges_long_short_px(poly4x2)
-    W_m = W_mm / 1000.0
-    H_m = H_mm / 1000.0
-
-    if W_m >= H_m:
-        Z1 = (intr.fx * W_m) / max(long_px, 1e-6)
-        Z2 = (intr.fy * H_m) / max(short_px, 1e-6)
-    else:
-        Z1 = (intr.fx * H_m) / max(long_px, 1e-6)
-        Z2 = (intr.fy * W_m) / max(short_px, 1e-6)
-
-    return float(0.5 * (Z1 + Z2))  # meters
-
-
 def XY_from_pixel_and_Z(cx: int, cy: int, intr, Z_m: float):
     X = (cx - intr.ppx) / intr.fx * Z_m
     Y = (cy - intr.ppy) / intr.fy * Z_m
     return float(X), float(Y)  # meters
-
-
-def size_consistency_check(poly4x2, intr, Z_use_m, W_mm, H_mm, rel_err_max=0.25):
-    long_px, short_px = edges_long_short_px(poly4x2)
-
-    L1_mm = (long_px * Z_use_m / intr.fx) * 1000.0
-    L2_mm = (short_px * Z_use_m / intr.fy) * 1000.0
-
-    W_big = max(W_mm, H_mm)
-    H_sml = min(W_mm, H_mm)
-
-    err1 = abs(L1_mm - W_big) / max(1e-6, W_big)
-    err2 = abs(L2_mm - H_sml) / max(1e-6, H_sml)
-
-    return (err1 <= rel_err_max) and (err2 <= rel_err_max)
 
 
 def obb_angle_deg_upright0_rightplus(poly4x2: np.ndarray) -> float:
@@ -140,68 +105,209 @@ def draw_overlay_xyz_angle(img, Xmm, Ymm, Zmm, angle, cfg: VisionConfig):
     cv2.putText(img, line2, (x, y + 18 + h1 + 6), font, fs, (255, 255, 255), th, cv2.LINE_AA)
 
 
-def measure_box(cfg: VisionConfig = DEFAULT_VISION_CONFIG) -> Optional[Dict[str, Any]]:
-    model = YOLO(cfg.model_path)
+# ============================================================
+# Streamer + On-demand measurement (press 2 to request)
+#  - ✅ 박스 실측크기 기반(Z_size) 제거
+#  - ✅ Depth ROI(median)만 사용
+# ============================================================
+class _VisionRuntime:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._cv = threading.Condition(self._lock)
 
-    pipeline = rs.pipeline()
-    rs_cfg = rs.config()
-    rs_cfg.enable_stream(rs.stream.color, cfg.width, cfg.height, rs.format.bgr8, cfg.fps)
-    rs_cfg.enable_stream(rs.stream.depth, cfg.width, cfg.height, rs.format.z16, cfg.fps)
+        self._running = False
+        self._thread: Optional[threading.Thread] = None
 
-    profile = pipeline.start(rs_cfg)
-    align = rs.align(rs.stream.color)
+        self._cfg: VisionConfig = DEFAULT_VISION_CONFIG
+        self._model: Optional[YOLO] = None
 
-    depth_sensor = profile.get_device().first_depth_sensor()
-    depth_scale = float(depth_sensor.get_depth_scale())
+        self._pipeline: Optional[rs.pipeline] = None
+        self._align: Optional[rs.align] = None
+        self._depth_scale: float = 0.001
 
-    temporal = rs.temporal_filter()
-    spatial = rs.spatial_filter()
-    hole = rs.hole_filling_filter()
+        self._temporal = rs.temporal_filter()
+        self._spatial = rs.spatial_filter()
+        self._hole = rs.hole_filling_filter()
 
-    spatial.set_option(rs.option.filter_magnitude, 2)
-    spatial.set_option(rs.option.filter_smooth_alpha, 0.5)
-    spatial.set_option(rs.option.filter_smooth_delta, 20)
+        # measure request state
+        self._req_active: bool = False
+        self._req_n: int = 10
+        self._req_deadline: float = 0.0
+        self._req_samples: List[List[float]] = []  # [[Xmm,Ymm,Zmm,angle],...]
+        self._req_result: Optional[Dict[str, Any]] = None
 
-    accepted_xyza = []  # [[Xmm,Ymm,Zmm,angle], ...]
-    prev_valid = None
-    consec_skips = 0
-    t0 = time.time()
+        # overlay memo
+        self._last_disp = {"Xmm": None, "Ymm": None, "Zmm": None, "angle": None}
 
-    if cfg.show_preview:
-        cv2.namedWindow(cfg.preview_win_name, cv2.WINDOW_NORMAL)
-        cv2.resizeWindow(cfg.preview_win_name, cfg.width, cfg.height)
+    def is_running(self) -> bool:
+        with self._lock:
+            return bool(self._running)
 
-    last_disp = {"Xmm": None, "Ymm": None, "Zmm": None, "angle": None}
+    def start(self, cfg: VisionConfig = DEFAULT_VISION_CONFIG):
+        with self._lock:
+            if self._running:
+                return
 
-    try:
-        while True:
-            if time.time() - t0 > cfg.timeout_sec:
+            self._cfg = cfg
+            self._model = YOLO(cfg.model_path)
+
+            self._pipeline = rs.pipeline()
+            rs_cfg = rs.config()
+            rs_cfg.enable_stream(rs.stream.color, cfg.width, cfg.height, rs.format.bgr8, cfg.fps)
+            rs_cfg.enable_stream(rs.stream.depth, cfg.width, cfg.height, rs.format.z16, cfg.fps)
+            profile = self._pipeline.start(rs_cfg)
+
+            self._align = rs.align(rs.stream.color)
+
+            depth_sensor = profile.get_device().first_depth_sensor()
+            self._depth_scale = float(depth_sensor.get_depth_scale())
+
+            # filters
+            self._spatial.set_option(rs.option.filter_magnitude, 2)
+            self._spatial.set_option(rs.option.filter_smooth_alpha, 0.5)
+            self._spatial.set_option(rs.option.filter_smooth_delta, 20)
+
+            if cfg.show_preview:
+                cv2.namedWindow(cfg.preview_win_name, cv2.WINDOW_NORMAL)
+                cv2.resizeWindow(cfg.preview_win_name, cfg.width, cfg.height)
+
+            self._req_active = False
+            self._req_samples.clear()
+            self._req_result = None
+            self._last_disp = {"Xmm": None, "Ymm": None, "Zmm": None, "angle": None}
+
+            self._running = True
+            self._thread = threading.Thread(target=self._loop, name="VisionStream", daemon=True)
+            self._thread.start()
+
+    def stop(self):
+        with self._lock:
+            if not self._running:
+                return
+            self._running = False
+            self._cv.notify_all()
+
+        if self._thread is not None:
+            try:
+                self._thread.join(timeout=1.5)
+            except Exception:
+                pass
+        self._thread = None
+
+        try:
+            if self._pipeline is not None:
+                self._pipeline.stop()
+        except Exception:
+            pass
+
+        try:
+            if self._cfg.show_preview:
+                cv2.destroyWindow(self._cfg.preview_win_name)
+        except Exception:
+            pass
+
+        with self._lock:
+            self._pipeline = None
+            self._align = None
+            self._model = None
+            self._req_active = False
+            self._req_samples.clear()
+            self._req_result = None
+
+    def measure_avg(self, n: int = 10, timeout_sec: Optional[float] = None) -> Optional[Dict[str, Any]]:
+        """
+        ✅ 스트리밍은 계속 유지한 채로,
+        '지금부터' valid 샘플 n개 모아 평균 반환.
+        """
+        with self._lock:
+            if not self._running:
                 return None
 
-            frames = pipeline.wait_for_frames()
-            frames = align.process(frames)
+            if timeout_sec is None:
+                timeout_sec = float(getattr(self._cfg, "timeout_sec", 6.0))
 
-            color_frame = frames.get_color_frame()
-            depth_frame = frames.get_depth_frame()
-            if not color_frame or not depth_frame:
+            self._req_active = True
+            self._req_n = int(max(1, n))
+            self._req_deadline = time.time() + float(timeout_sec)
+            self._req_samples = []
+            self._req_result = None
+            self._cv.notify_all()
+
+            # wait
+            while True:
+                if self._req_result is not None:
+                    out = dict(self._req_result)
+                    self._req_result = None
+                    return out
+
+                if not self._running:
+                    return None
+
+                if time.time() >= self._req_deadline:
+                    # timeout -> request cancel
+                    self._req_active = False
+                    self._req_samples = []
+                    return None
+
+                self._cv.wait(timeout=0.2)
+
+    def _loop(self):
+        cfg = self._cfg
+        prev_valid = None
+        consec_skips = 0
+
+        while True:
+            with self._lock:
+                if not self._running:
+                    break
+                req_active = self._req_active
+                req_n = self._req_n
+                deadline = self._req_deadline
+
+            # fetch frames
+            try:
+                assert self._pipeline is not None
+                assert self._align is not None
+                frames = self._pipeline.wait_for_frames()
+                frames = self._align.process(frames)
+
+                color_frame = frames.get_color_frame()
+                depth_frame = frames.get_depth_frame()
+                if not color_frame or not depth_frame:
+                    continue
+
+                depth_frame = self._spatial.process(depth_frame).as_depth_frame()
+                depth_frame = self._temporal.process(depth_frame).as_depth_frame()
+                depth_frame = self._hole.process(depth_frame).as_depth_frame()
+
+                frame = np.asanyarray(color_frame.get_data())
+                intr = color_frame.profile.as_video_stream_profile().get_intrinsics()
+                depth_u16 = np.asanyarray(depth_frame.get_data())
+            except Exception:
                 continue
 
-            depth_frame = spatial.process(depth_frame).as_depth_frame()
-            depth_frame = temporal.process(depth_frame).as_depth_frame()
-            depth_frame = hole.process(depth_frame).as_depth_frame()
+            # yolo
+            try:
+                assert self._model is not None
+                results = self._model.predict(
+                    frame,
+                    imgsz=cfg.imgsz,
+                    conf=cfg.conf_thres,
+                    iou=cfg.iou_thres,
+                    verbose=False
+                )
+                r = results[0] if results else None
+            except Exception:
+                r = None
 
-            frame = np.asanyarray(color_frame.get_data())
-            intr = color_frame.profile.as_video_stream_profile().get_intrinsics()
-            depth_u16 = np.asanyarray(depth_frame.get_data())
+            vis = frame.copy()
 
-            results = model.predict(frame, imgsz=cfg.imgsz, conf=cfg.conf_thres, iou=cfg.iou_thres, verbose=False)
-            r = results[0]
-
+            # candidates
             candidates = []
             img_cx = (cfg.width - 1) * 0.5
             img_cy = (cfg.height - 1) * 0.5
 
-            if getattr(r, "obb", None) is not None and r.obb is not None:
+            if r is not None and getattr(r, "obb", None) is not None and r.obb is not None:
                 obb = r.obb
                 if obb.xyxyxyxy is not None and len(obb.xyxyxyxy) > 0:
                     polys = obb.xyxyxyxy.cpu().numpy()
@@ -219,124 +325,140 @@ def measure_box(cfg: VisionConfig = DEFAULT_VISION_CONFIG) -> Optional[Dict[str,
                         dist2 = dx * dx + dy * dy
                         candidates.append((dist2, -float(cf), float(cf), int(ci), poly, cx_det, cy_det))
 
-            if not candidates:
-                consec_skips += 1
-                if consec_skips >= cfg.max_consec_skips_reset:
-                    prev_valid = None
-                    consec_skips = 0
+            # draw (항상 프리뷰엔 보여줌)
+            if candidates:
+                candidates.sort()
+                dist2, _ncf, cf, ci, poly, cx_det_f, cy_det_f = candidates[0]
+                cx = clamp(int(round(cx_det_f)), 0, cfg.width - 1)
+                cy = clamp(int(round(cy_det_f)), 0, cfg.height - 1)
 
-                if cfg.show_preview:
-                    vis = frame
-                    if cfg.show_overlay and last_disp["Xmm"] is not None:
-                        vis = vis.copy()
-                        draw_overlay_xyz_angle(vis, last_disp["Xmm"], last_disp["Ymm"], last_disp["Zmm"], last_disp["angle"], cfg)
-                    cv2.imshow(cfg.preview_win_name, vis)
-                    if (cv2.waitKey(1) & 0xFF) == 27:
-                        return None
-                continue
+                poly_i = np.round(poly).astype(np.int32).reshape(-1, 1, 2)
+                cv2.polylines(vis, [poly_i], True, (0, 255, 0), 2)
+                cv2.circle(vis, (cx, cy), 5, (0, 0, 255), -1)
 
-            candidates.sort()
-            dist2, _ncf, cf, ci, poly, cx_det_f, cy_det_f = candidates[0]
-            chosen_dist_px = float(np.sqrt(dist2))
-            num_boxes = len(candidates)
+            # measurement collection only when requested
+            if req_active:
+                # timeout cancel inside loop
+                if time.time() >= deadline:
+                    with self._lock:
+                        self._req_active = False
+                        self._req_samples = []
+                        self._cv.notify_all()
+                    req_active = False
 
-            cx = clamp(int(round(cx_det_f)), 0, cfg.width - 1)
-            cy = clamp(int(round(cy_det_f)), 0, cfg.height - 1)
+                if req_active and candidates:
+                    candidates.sort()
+                    dist2, _ncf, cf, ci, poly, cx_det_f, cy_det_f = candidates[0]
+                    cx = clamp(int(round(cx_det_f)), 0, cfg.width - 1)
+                    cy = clamp(int(round(cy_det_f)), 0, cfg.height - 1)
 
-            vis = frame.copy()
-            poly_i = np.round(poly).astype(np.int32).reshape(-1, 1, 2)
-            cv2.polylines(vis, [poly_i], True, (0, 255, 0), 2)
-            cv2.circle(vis, (cx, cy), 5, (0, 0, 255), -1)
+                    poly_shrunk = poly_shrink_towards_center(poly, cfg.roi_margin_px)
+                    poly_shrunk[:, 0] = np.clip(poly_shrunk[:, 0], 0, cfg.width - 1)
+                    poly_shrunk[:, 1] = np.clip(poly_shrunk[:, 1], 0, cfg.height - 1)
 
-            poly_shrunk = poly_shrink_towards_center(poly, cfg.roi_margin_px)
-            poly_shrunk[:, 0] = np.clip(poly_shrunk[:, 0], 0, cfg.width - 1)
-            poly_shrunk[:, 1] = np.clip(poly_shrunk[:, 1], 0, cfg.height - 1)
+                    # ✅ Depth ROI만 사용
+                    Z_roi_m, mad_m, roi_n = depth_roi_stats(depth_u16, self._depth_scale, poly_shrunk, cfg)
 
-            Z_roi_m, mad_m, roi_n = depth_roi_stats(depth_u16, depth_scale, poly_shrunk, cfg)
-            Z_size_m = estimate_Z_from_size(poly, intr, cfg.box_w_mm, cfg.box_h_mm)
+                    depth_ok = (
+                        (Z_roi_m > 0.0) and
+                        (roi_n >= cfg.min_roi_pixels) and
+                        (mad_m <= cfg.mad_thres_m)
+                    )
 
-            depth_ok = (Z_roi_m > 0.0 and roi_n >= cfg.min_roi_pixels and mad_m <= cfg.mad_thres_m)
-            if depth_ok:
-                alpha = clamp(0.85 - (mad_m / max(1e-6, cfg.mad_thres_m)) * 0.35, 0.55, 0.90)
-                Z_use_m = alpha * Z_roi_m + (1.0 - alpha) * Z_size_m
-            else:
-                Z_use_m = Z_size_m
+                    # ✅ depth가 나쁘면 이번 프레임은 샘플로 안 씀 (fallback 없음)
+                    if not depth_ok:
+                        consec_skips += 1
+                        continue
 
-            Z_use_mm = Z_use_m * 1000.0
-            if not (cfg.z_range_mm[0] <= Z_use_mm <= cfg.z_range_mm[1]):
-                consec_skips += 1
-                if consec_skips >= cfg.max_consec_skips_reset:
-                    prev_valid = None
-                    consec_skips = 0
+                    Z_use_m = Z_roi_m
+                    Z_use_mm = Z_use_m * 1000.0
 
-                if cfg.show_preview:
-                    if cfg.show_overlay and last_disp["Xmm"] is not None:
-                        draw_overlay_xyz_angle(vis, last_disp["Xmm"], last_disp["Ymm"], last_disp["Zmm"], last_disp["angle"], cfg)
-                    cv2.imshow(cfg.preview_win_name, vis)
-                    if (cv2.waitKey(1) & 0xFF) == 27:
-                        return None
-                continue
+                    if not (cfg.z_range_mm[0] <= Z_use_mm <= cfg.z_range_mm[1]):
+                        consec_skips += 1
+                        continue
 
-            X_m, Y_m = XY_from_pixel_and_Z(cx, cy, intr, Z_use_m)
-            angle = obb_angle_deg_upright0_rightplus(poly)
+                    X_m, Y_m = XY_from_pixel_and_Z(cx, cy, intr, Z_use_m)
+                    angle = obb_angle_deg_upright0_rightplus(poly)
 
-            cur = {
-                "Xmm": X_m * 1000.0,
-                "Ymm": Y_m * 1000.0,
-                "Zmm": Z_use_m * 1000.0,
-                "angle": float(angle),
-            }
+                    cur = {
+                        "Xmm": X_m * 1000.0,
+                        "Ymm": Y_m * 1000.0,
+                        "Zmm": Z_use_m * 1000.0,
+                        "angle": float(angle),
+                    }
 
-            ok_sz = size_consistency_check(poly, intr, Z_use_m, cfg.box_w_mm, cfg.box_h_mm, rel_err_max=cfg.size_rel_err_max)
-            if (not ok_sz) or is_jump(prev_valid, cur, cfg):
-                consec_skips += 1
-                if consec_skips >= cfg.max_consec_skips_reset:
-                    prev_valid = None
-                    consec_skips = 0
+                    if not is_jump(prev_valid, cur, cfg):
+                        prev_valid = cur
+                        consec_skips = 0
 
-                last_disp.update(cur)
-                if cfg.show_preview:
-                    draw_overlay_xyz_angle(vis, cur["Xmm"], cur["Ymm"], cur["Zmm"], cur["angle"], cfg)
-                    cv2.imshow(cfg.preview_win_name, vis)
-                    if (cv2.waitKey(1) & 0xFF) == 27:
-                        return None
-                continue
+                        with self._lock:
+                            if self._req_active:  # still active
+                                self._req_samples.append([cur["Xmm"], cur["Ymm"], cur["Zmm"], cur["angle"]])
 
-            # accept
-            consec_skips = 0
-            prev_valid = cur
-            accepted_xyza.append([cur["Xmm"], cur["Ymm"], cur["Zmm"], cur["angle"]])
+                                if len(self._req_samples) >= req_n:
+                                    arr = np.array(self._req_samples, dtype=np.float32)
+                                    out = {
+                                        "cam_x_mm": float(arr[:, 0].mean()),
+                                        "cam_y_mm": float(arr[:, 1].mean()),
+                                        "cam_z_mm": float(arr[:, 2].mean()),
+                                        "angle_deg": float(arr[:, 3].mean()),
+                                    }
+                                    self._req_result = out
+                                    self._req_active = False
+                                    self._req_samples = []
+                                    self._cv.notify_all()
+                    else:
+                        consec_skips += 1
 
-            last_disp.update(cur)
+            # overlay display memory
+            if candidates and cfg.show_overlay and prev_valid is not None:
+                self._last_disp.update(prev_valid)
 
             if cfg.show_preview:
-                draw_overlay_xyz_angle(vis, cur["Xmm"], cur["Ymm"], cur["Zmm"], cur["angle"], cfg)
+                if cfg.show_overlay and self._last_disp["Xmm"] is not None:
+                    draw_overlay_xyz_angle(
+                        vis,
+                        self._last_disp["Xmm"],
+                        self._last_disp["Ymm"],
+                        self._last_disp["Zmm"],
+                        self._last_disp["angle"],
+                        cfg
+                    )
+
                 cv2.imshow(cfg.preview_win_name, vis)
                 if (cv2.waitKey(1) & 0xFF) == 27:
-                    return None
+                    # ESC -> stop
+                    self.stop()
+                    break
 
-            if cfg.print_selected_each_accept:
-                print(f"[{len(accepted_xyza)}/{cfg.avg_n}] picked=1/{num_boxes}  dist_to_img_center={chosen_dist_px:.1f}px  conf={cf:.2f}  cls={ci}")
 
-            if len(accepted_xyza) >= cfg.avg_n:
-                break
+# singleton runtime
+_RT = _VisionRuntime()
 
-        cam_mean = np.mean(np.array(accepted_xyza, dtype=np.float32), axis=0)
-        return {
-            "cam_x_mm": float(cam_mean[0]),
-            "cam_y_mm": float(cam_mean[1]),
-            "cam_z_mm": float(cam_mean[2]),
-            "angle_deg": float(cam_mean[3]),
-        }
 
-    finally:
-        try:
-            pipeline.stop()
-        except Exception:
-            pass
-        if cfg.show_preview:
-            try:
-                cv2.destroyWindow(cfg.preview_win_name)
-            except Exception:
-                pass
+# -----------------------------
+# Public API (main에서 호출)
+# -----------------------------
+def start_stream(cfg: VisionConfig = DEFAULT_VISION_CONFIG):
+    """스트리밍 시작(계속 프리뷰)"""
+    _RT.start(cfg)
+
+
+def stop_stream():
+    """스트리밍 종료"""
+    _RT.stop()
+
+
+def is_running() -> bool:
+    return _RT.is_running()
+
+
+def measure_avg(n: int = 10, timeout_sec: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    """
+    2번에서 호출:
+    스트리밍은 계속 유지하고, n개 샘플 평균값만 반환
+    """
+    return _RT.measure_avg(n=n, timeout_sec=timeout_sec)
+
+
 
