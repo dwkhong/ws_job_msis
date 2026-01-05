@@ -15,7 +15,7 @@ class VisionConfig:
     # camera stream
     width: int = 640
     height: int = 480
-    fps: int = 30
+    fps: int = 10
 
     # box real size (mm)
     #box_w_mm: float = 232.0

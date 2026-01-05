@@ -10,7 +10,7 @@ from app_config import ROBOT_IP_DEFAULT
 
 from robot import j4_rotate as j4r
 
-# ✅ home_pc 기준 패키지 import (robot/, vision/에 __init__.py 있어야 함)
+# ✅ home_pc 기준 패키지 import
 from robot import robot_config as rc
 from robot import connect_fairino as cf
 from robot import robot_state as rs
@@ -40,6 +40,7 @@ def print_menu(robot_connected: bool, robot_ip: str):
     print("  9 : Smooth Auto (phase0 검증/보정 -> phase0 한번에 -> J6 -> Zdown 한번에) ")
     print(" 10 :  STACK Cycle (A -> DROP(z+48*cnt) -> OPEN -> A -> HOME, cnt++) ")
     print(" 11 :  J4 수동 회전 (deg 입력 -> MoveJ) ")
+    print(" 12 :  ★ AUTO LOOP ★ (Home->Measure->Pick->Home->Stack Loop) ")
     print("  q : 종료")
     print("---------------------------------------")
     print(f"  상태: {'CONNECTED ' if robot_connected else 'DISCONNECTED '}")
@@ -57,8 +58,12 @@ def _print_measure(res: dict):
             f"{float(res['cam_z_mm']):+.1f})"
         )
     else:
-        print("measure_res:", res)
-    print(f"angle(deg)  = {angle:+.2f}")
+        # measure_box 결과 키값에 따라 다를 수 있어 안전하게 출력
+        pass
+        
+    print(f"measure angle(deg)  = {angle:+.2f}")
+    if "move_x_mm" in res:
+        print(f"moveXYZ(mm) = ({res['move_x_mm']:.1f}, {res['move_y_mm']:.1f}, {res['move_z_mm']:.1f})")
 
 
 def main():
@@ -91,7 +96,7 @@ def main():
 
     while True:
         print_menu(robot_connected=(robot is not None), robot_ip=robot_ip)
-        cmd = input("입력 (0/1/2/3/4/5/6/7/8/9/10/11/q) > ").strip().lower()
+        cmd = input("입력 (0~12/q) > ").strip().lower()
 
         if cmd == "0":
             # 토글: 연결돼 있으면 끊고, 아니면 연결
@@ -425,7 +430,7 @@ def main():
             print(f"[DONE] ok={ok}, delta={d:+.3f}, err={err}\n")
 
         elif cmd == "12":
-            # ✅ 자동 반복 루프 (Home -> Measure -> Calc -> ★IK Check★ -> Pick -> Place)
+            # ✅ 자동 반복 루프 (Home -> Measure -> Calc -> IK Check -> Pick -> ★Home★ -> Place)
             if robot is None:
                 print("[WARN] 로봇 연결 필요\n")
                 continue
@@ -478,13 +483,15 @@ def main():
                     if hasattr(tp, "build_target_pose_with_debug"):
                         out_tp = tp.build_target_pose_with_debug(cur_p, res)
                         target = out_tp["target_pose6"]
+                        # [수정] 문제의 함수 호출 제거하고 단순 출력으로 대체
+                        print(f"    (Preview) Target: {tp.fmt_pose6(target)}")
                     else:
                         target = tp.build_target_pose(cur_p, res)
                 except Exception as e:
                     print(f"❌ [Step 3] 계산 에러: {e}")
                     break
 
-                # ✅ [추가됨] 5. IK 점검 및 보정 (CMD 4 기능)
+                # 5. IK 점검 및 보정
                 print(f" -> [Step 4] IK 점검 및 보정...")
                 ik_out = ika.cmd4_check_and_adjust_target_only(
                     robot=robot,
@@ -496,10 +503,8 @@ def main():
                 
                 if not ik_out.get("ok", False):
                     print(f"❌ [Step 4] IK 실패: {ik_out.get('msg')}")
-                    # IK 실패 시 루프를 계속할지, 멈출지 결정 (여기선 멈춤)
                     break
                 
-                # 보정된 Target으로 업데이트
                 target = ik_out["target"]
                 if ik_out.get("adjusted", False):
                     print(f"    (IK 보정됨) {rs.fmt_pose6(target)}")
@@ -520,6 +525,17 @@ def main():
                 if not out_pick["ok"]:
                     print(f"❌ [Step 5] Pick 실패: {out_pick['msg']}")
                     break
+                
+                # ========================================================
+                # ✅ [추가됨] Pick 후 안전하게 Home 복귀 (Step 5.5)
+                # ========================================================
+                print(f" -> [Step 5.5] 안전을 위해 Home으로 복귀...")
+                out_safe_home = rh.cmd7_return_to_initial(robot, initial_joint6, reconnect)
+                if not out_safe_home["ok"]:
+                    print(f"❌ [Step 5.5] Home 복귀 실패: {out_safe_home['msg']}")
+                    break
+                time.sleep(0.5)
+                # ========================================================
 
                 # 7. Stack Cycle (Place)
                 print(f" -> [Step 6] Place (Stacking)...")

@@ -17,9 +17,9 @@ def compute_move_xyz_from_measure(measure_res: MeasureDict, current_ry: float) -
     1단계: 카메라 측정값과 현재 로봇 기울기(RY)를 이용한 기본 이동량 계산
     """
     # 1) cam 측정값 + 오프셋
-    cx = float(measure_res["cam_x_mm"]) + float(getattr(rc, "OFF_X_MM", 0.0))
-    cy = float(measure_res["cam_y_mm"]) + float(getattr(rc, "OFF_Y_MM", 0.0))
-    cz = float(measure_res["cam_z_mm"]) + float(getattr(rc, "OFF_Z_MM", 0.0))
+    cx = float(measure_res["move_x_mm"]) + float(getattr(rc, "OFF_X_MM", 0.0))
+    cy = float(measure_res["move_y_mm"]) + float(getattr(rc, "OFF_Y_MM", 0.0))
+    cz = float(measure_res["move_z_mm"]) + float(getattr(rc, "OFF_Z_MM", 0.0))
 
     # 2) 카메라 로컬 부호 매핑 (기존 규칙 유지)
     dx0 = -cx
