@@ -50,20 +50,22 @@ def print_menu(robot_connected: bool, robot_ip: str):
 
 
 def _print_measure(res: dict):
-    angle = float(res.get("angle_deg", 0.0))
-    if "cam_x_mm" in res and "cam_y_mm" in res and "cam_z_mm" in res:
-        print(
-            f"camXYZ(mm) = ({float(res['cam_x_mm']):+.1f}, "
-            f"{float(res['cam_y_mm']):+.1f}, "
-            f"{float(res['cam_z_mm']):+.1f})"
-        )
-    else:
-        # measure_box 결과 키값에 따라 다를 수 있어 안전하게 출력
-        pass
-        
-    print(f"measure angle(deg)  = {angle:+.2f}")
+    # 1. 기본 3D 좌표 (X, Y, Z)
     if "move_x_mm" in res:
-        print(f"moveXYZ(mm) = ({res['move_x_mm']:.1f}, {res['move_y_mm']:.1f}, {res['move_z_mm']:.1f})")
+        print(f"  [Position] XYZ(mm) = ({res['move_x_mm']:.1f}, {res['move_y_mm']:.1f}, {res['move_z_mm']:.1f})")
+    
+    # 2. 회전 각도 (RZ: 기존 OBB 회전, RX/RY: 이번에 추가한 3D 기울기)
+    rz = float(res.get("angle_deg", 0.0))
+    ry = float(res.get("ry_deg", 0.0)) # Pitch (앞뒤 기울기)
+    rx = float(res.get("rx_deg", 0.0)) # Roll (좌우 기울기)
+    
+    print(f"  [Rotation] RZ (Yaw)  = {rz:+.2f} deg  (박스 회전)")
+    print(f"             RY (Pitch)= {ry:+.2f} deg  (앞뒤 경사) -> 로봇 Pitch 보정용")
+    print(f"             RX (Roll) = {rx:+.2f} deg  (좌우 경사)")
+
+    # (참고) 디버깅용 캠 좌표
+    if "cam_x_mm" in res:
+        print(f"  (Debug-Cam) XYZ    = ({float(res['cam_x_mm']):.1f}, {float(res['cam_y_mm']):.1f}, {float(res['cam_z_mm']):.1f})")
 
 
 def main():

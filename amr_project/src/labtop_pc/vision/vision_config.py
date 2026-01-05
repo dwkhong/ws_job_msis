@@ -1,3 +1,4 @@
+# src/labtop_pc/vision/vision_config.py
 from dataclasses import dataclass
 from typing import Tuple
 
@@ -7,20 +8,15 @@ class VisionConfig:
     model_path: str
     conf_thres: float = 0.85
     iou_thres: float = 0.85
+    
+    # [중요] YOLO 학습 해상도 (640x640 학습 모델인 경우)
     imgsz: int = 640
 
-    #dist_coeffs: Tuple[float, ...] = (-0.03841, 0.09418, -0.01255, 0.00551, -0.04916)
-    #dist_coeffs: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0)
-    
-    # camera stream
+    # camera stream 
+    # (Realsense는 640x640 출력을 지원하지 않으므로, 640x480으로 설정)
     width: int = 640
     height: int = 480
-    fps: int = 10
-
-    # box real size (mm)
-    #box_w_mm: float = 232.0
-    #box_h_mm: float = 97.0
-    #size_rel_err_max: float = 0.25
+    fps: int = 30      # 30fps 권장
 
     # sampling
     avg_n: int = 10
@@ -36,7 +32,6 @@ class VisionConfig:
     # sanity filters
     z_range_mm: Tuple[float, float] = (150.0, 1200.0)
     
-
     jump_xy_mm: float = 35.0
     jump_z_mm: float = 60.0
     jump_ang_deg: float = 10.0

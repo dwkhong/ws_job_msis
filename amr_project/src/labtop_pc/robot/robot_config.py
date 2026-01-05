@@ -46,7 +46,7 @@ SEARCH_RY_LIST = [0, 1, -1, 2, -2, 3, -3, 5, -5, 8, -8, 12, -12, 15, -15]
 ANGLE_TO_J6_SIGN = +1.0
 J6_MAX_STEP_DEG  = 45.0
 
-MOVEJ_VEL_J6 = 80.0
+MOVEJ_VEL_J6 = 90.0
 MOVEJ_BLENDT_J6 = -1.0
 
 # -------------------------
@@ -70,22 +70,22 @@ STEP_TRY_LIST_DEFAULT = [STEP_SCALE_DEFAULT, 0.05, 0.02, 0.01]
 # ============================================================
 # ✅ SPEED CONFIG (여기서 %로 조절)
 # ============================================================
-MOVE_CART_VEL_DEFAULT = 80.0          # ✅ 안전 시작 (100 -> 30)
+MOVE_CART_VEL_DEFAULT = 90.0          # ✅ 안전 시작 (100 -> 30)
 MOVE_CART_VEL_FALLBACKS = [15.0, 8.0, 3.0]
 MOVE_CART_VEL_LIST = [MOVE_CART_VEL_DEFAULT] + MOVE_CART_VEL_FALLBACKS
 
-MOVE_CART_ACC = 30.0                  # ✅ 가속도 낮게
+MOVE_CART_ACC = 50.0                  # ✅ 가속도 낮게
 #MOVE_CART_DEC = 80.0                  # (지금 move_step.py에선 안 쓰지만 같이 둠)
 
 MOVE_CART_OVL = 20.0                  # ✅ override(%) 안전 시작 (20%)
 MOVE_CART_BLENDT = -1.0               # ✅ blending time (보통 -1 = off/기본)
 MOVE_CART_EX = -1                     # ✅ 확장옵션/모드 (기본 0)
 
-MOVEJ_VEL_RETURN = 80.0
+MOVEJ_VEL_RETURN = 90.0
 MOVEJ_BLENDT_RETURN = -1.0
 
 # ✅ 11번용 MoveJ 속도
-MOVEJ_VEL_WP11 = 80.0
+MOVEJ_VEL_WP11 = 90.0
 MOVEJ_BLENDT_WP11 = -1.0
 
 # -------------------------
