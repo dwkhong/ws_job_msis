@@ -14,7 +14,7 @@ from robot import j4_rotate as j4r
 from robot import robot_config as rc
 from robot import connect_fairino as cf
 from robot import robot_state as rs
-from vision import measure_box_test_2 as mb
+from vision import measure_box as mb
 from robot import target_pose as tp
 from robot import ik_adjust as ika
 from robot import j6_rotate as j6r
@@ -424,6 +424,121 @@ def main():
             )
             print(f"[DONE] ok={ok}, delta={d:+.3f}, err={err}\n")
 
+        elif cmd == "12":
+            # ✅ 자동 반복 루프 (Home -> Measure -> Calc -> ★IK Check★ -> Pick -> Place)
+            if robot is None:
+                print("[WARN] 로봇 연결 필요\n")
+                continue
+            if initial_joint6 is None:
+                print("[WARN] 1번을 눌러 초기 위치(Home)를 먼저 저장하세요!\n")
+                continue
+            if not mb.is_running():
+                print("[WARN] 카메라가 꺼져있습니다. 0번을 누르세요.\n")
+                continue
+
+            raw_n = input("반복할 횟수를 입력하세요 (예: 4) > ").strip()
+            try:
+                loop_cnt = int(raw_n)
+            except:
+                print("[ERR] 숫자가 아닙니다.")
+                continue
+
+            print(f"\n🚀 자동 작업 시작: {loop_cnt}회 반복 예정")
+            
+            for i in range(loop_cnt):
+                print(f"\n========================================")
+                print(f" [Cycle {i+1} / {loop_cnt}] 작업 시작")
+                print(f"========================================")
+
+                # 1. 초기 위치 복귀
+                print(f" -> [Step 1] 초기 위치 이동...")
+                out_home = rh.cmd7_return_to_initial(robot, initial_joint6, reconnect)
+                if not out_home["ok"]:
+                    print(f"❌ [Step 1] 실패: {out_home['msg']}")
+                    break
+                time.sleep(1.0) 
+                
+                # 2. 현재 로봇 포즈 읽기
+                (e1, cur_p), (e2, cur_j) = rs.read_pose_joint(robot, reconnect)
+                if e1!=0 or e2!=0: 
+                    print("❌ 포즈 읽기 실패")
+                    break
+
+                # 3. 비전 측정
+                print(f" -> [Step 2] 비전 측정 중...")
+                res = mb.measure_avg(n=10)
+                if res is None:
+                    print("❌ [Step 2] 박스를 찾지 못함 -> 루프 중단")
+                    break
+                _print_measure(res)
+
+                # 4. Target 생성
+                print(f" -> [Step 3] 목표 좌표 계산...")
+                try:
+                    if hasattr(tp, "build_target_pose_with_debug"):
+                        out_tp = tp.build_target_pose_with_debug(cur_p, res)
+                        target = out_tp["target_pose6"]
+                    else:
+                        target = tp.build_target_pose(cur_p, res)
+                except Exception as e:
+                    print(f"❌ [Step 3] 계산 에러: {e}")
+                    break
+
+                # ✅ [추가됨] 5. IK 점검 및 보정 (CMD 4 기능)
+                print(f" -> [Step 4] IK 점검 및 보정...")
+                ik_out = ika.cmd4_check_and_adjust_target_only(
+                    robot=robot,
+                    reconnect=reconnect,
+                    cur_pose6=cur_p,
+                    cur_joint6=cur_j,
+                    target_pose6=target
+                )
+                
+                if not ik_out.get("ok", False):
+                    print(f"❌ [Step 4] IK 실패: {ik_out.get('msg')}")
+                    # IK 실패 시 루프를 계속할지, 멈출지 결정 (여기선 멈춤)
+                    break
+                
+                # 보정된 Target으로 업데이트
+                target = ik_out["target"]
+                if ik_out.get("adjusted", False):
+                    print(f"    (IK 보정됨) {rs.fmt_pose6(target)}")
+                else:
+                    print("    (IK 정상)")
+
+                # 6. Smooth Auto (Pick)
+                print(f" -> [Step 5] Pick (Smooth Auto)...")
+                out_pick = sa.cmd9_smooth_auto(
+                    robot=robot,
+                    reconnect=reconnect,
+                    last_target_pose6=target,
+                    last_measure=res,
+                    state=state,
+                    tool=0, user=0,
+                    auto_grip_close=True
+                )
+                if not out_pick["ok"]:
+                    print(f"❌ [Step 5] Pick 실패: {out_pick['msg']}")
+                    break
+
+                # 7. Stack Cycle (Place)
+                print(f" -> [Step 6] Place (Stacking)...")
+                out_place = sc.cmd11_stack_cycle(
+                    robot=robot,
+                    reconnect=reconnect,
+                    state=state,
+                    home_joint6=initial_joint6,
+                    tool=0, user=0
+                )
+                if not out_place["ok"]:
+                    print(f"❌ [Step 6] Place 실패: {out_place['msg']}")
+                    break
+                
+                print(f"✅ Cycle {i+1} 완료! (현재 적재 수: {state['stack_counter']})")
+                time.sleep(0.5)
+
+            print("\n🎉 모든 반복 작업 종료.\n")
+
         elif cmd == "q":
             print("[EXIT] 종료합니다.")
             break
@@ -439,7 +554,6 @@ def main():
 
     if robot is not None:
         cf.disconnect(robot)
-
 
 if __name__ == "__main__":
     main()

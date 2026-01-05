@@ -1,6 +1,4 @@
 # robot_config.py
-
-
 # -----------------------------
 # ✅ Camera -> Gripper Offset (mm)
 # -----------------------------
@@ -54,7 +52,7 @@ MOVEJ_BLENDT_J6 = -1.0
 # -------------------------
 # Step config (7번용 유지)
 # -------------------------
-STEP_SCALE_DEFAULT = 0.4
+STEP_SCALE_DEFAULT = 0.7
 X_SCALE_MULT = 2.0
 
 # -------------------------

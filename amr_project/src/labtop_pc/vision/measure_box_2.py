@@ -45,9 +45,20 @@ def depth_roi_stats(depth_u16: np.ndarray, depth_scale: float, poly4x2: np.ndarr
     return med, mad, int(d.size)
 
 def XY_from_pixel_and_Z(cx: int, cy: int, intr, Z_m: float):
-    X = (cx - intr.ppx) / intr.fx * Z_m
-    Y = (cy - intr.ppy) / intr.fy * Z_m
-    return float(X), float(Y)
+    # [기존 코드 주석 처리] ----------------------------------------------------
+    # 수동 핀홀 모델 공식: 렌즈 왜곡(Distortion)이 고려되지 않아 외곽 오차 발생 가능
+    # X = (cx - intr.ppx) / intr.fx * Z_m
+    # Y = (cy - intr.ppy) / intr.fy * Z_m
+    # return float(X), float(Y)
+    # ------------------------------------------------------------------------
+
+    # [✅ 변경된 코드] RealSense SDK 공식 함수 사용 (Improvement 1)
+    # rs2_deproject_pixel_to_point 함수는 내부 왜곡 파라미터(Coeffs)까지 고려하여
+    # 2D 픽셀(Pixel) 좌표를 3D 공간(Point) 좌표로 정확하게 변환해 줍니다.
+    point_3d = rs.rs2_deproject_pixel_to_point(intr, [float(cx), float(cy)], float(Z_m))
+    
+    # point_3d는 [x, y, z] 리스트를 반환함
+    return point_3d[0], point_3d[1] # x, y (meters)
 
 def obb_angle_deg_upright0_rightplus(poly4x2: np.ndarray) -> float:
     p = poly4x2.astype(np.float32)

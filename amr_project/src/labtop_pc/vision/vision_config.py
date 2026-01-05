@@ -9,19 +9,18 @@ class VisionConfig:
     iou_thres: float = 0.85
     imgsz: int = 640
 
-    dist_coeffs: Tuple[float, ...] = (-0.03841, 0.09418, -0.01255, 0.00551, -0.04916)
+    #dist_coeffs: Tuple[float, ...] = (-0.03841, 0.09418, -0.01255, 0.00551, -0.04916)
     #dist_coeffs: Tuple[float, ...] = (0.0, 0.0, 0.0, 0.0, 0.0)
-
+    
     # camera stream
     width: int = 640
     height: int = 480
     fps: int = 30
 
     # box real size (mm)
-    box_w_mm: float = 232.0
-    box_h_mm: float = 97.0
-
-    size_rel_err_max: float = 0.25
+    #box_w_mm: float = 232.0
+    #box_h_mm: float = 97.0
+    #size_rel_err_max: float = 0.25
 
     # sampling
     avg_n: int = 10
