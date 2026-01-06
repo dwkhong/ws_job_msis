@@ -8,6 +8,7 @@
 *.tif
 *.tiff
 *.webp
+*.zip
 
 *.txt
 *.json
