@@ -6,8 +6,8 @@
 # -------------------------
 # Model
 # -------------------------
-MODEL_PATH = r"/eddie/model/model_obj/best_obj_20251218.engine"
-# MODEL_PATH = r"/eddie/model/model_obj/best_obj_20251218.pt"
+MODEL_PATH = "/home/msis/ws_job_msis/amr_project/src/jetson_pc/model/model_obj/best_obj_20251218.engine"
+#MODEL_PATH = "/home/msis/ws_job_msis/amr_project/src/jetson_pc/model/model_obj/best_obj_20251218.pt"
 
 CONF_THRES = 0.85
 IOU_THRES  = 0.85
@@ -18,7 +18,7 @@ IMGSZ = 640
 # Camera stream (D405)
 # -------------------------
 WIDTH  = 640
-HEIGHT = 320
+HEIGHT = 480
 FPS    = 30
 
 # -------------------------

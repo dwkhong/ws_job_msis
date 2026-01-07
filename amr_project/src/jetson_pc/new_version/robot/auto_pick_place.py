@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence, Union, List
 
 from . import robot_state as rs
 from . import target_pose as tp
@@ -12,15 +12,16 @@ from . import return_home as rh
 from . import gripper_control as gc
 from . import robot_config as rc
 
-# stack place
-from . import stack_cycle_11 as sc
-
-# vision
 from vision import measure_box as mb
 
 
+Pose6 = Union[List[float], Sequence[float]]
+
+
+# ============================================================
+# Helpers
+# ============================================================
 def _need_camera_running() -> bool:
-    # mb.is_running()이 있으면 쓰고, 없으면 "그냥 켜져있다고 가정" (호환용)
     if hasattr(mb, "is_running"):
         try:
             return bool(mb.is_running())
@@ -29,13 +30,146 @@ def _need_camera_running() -> bool:
     return True
 
 
+def _safe_call(fn, *args, reconnect=None, **kwargs):
+    """
+    최소 safe_call: 예외면 reconnect 1회 시도 후 재호출
+    """
+    try:
+        return fn(*args, **kwargs)
+    except Exception:
+        if reconnect:
+            try:
+                reconnect()
+            except Exception:
+                pass
+        return fn(*args, **kwargs)
+
+
+def _get_home_joint6(robot, reconnect=None):
+    """
+    home_joint6 얻기:
+    1) rs.get_initial_joint6() 있으면 그걸 사용
+    2) 없으면 rs.get_last_joint6() (2번 눌렀을 때 홈이었다고 가정)
+    3) 그래도 없으면 현재 joint 읽어서 사용 (최후수단)
+    """
+    if hasattr(rs, "get_initial_joint6"):
+        hj = rs.get_initial_joint6()
+        if hj is not None:
+            return hj
+
+    if hasattr(rs, "get_last_joint6"):
+        hj = rs.get_last_joint6()
+        if hj is not None:
+            return hj
+
+    # 최후수단: 현재 joint 읽기
+    try:
+        (e1, _p), (e2, j) = rs.read_pose_joint(robot, reconnect=reconnect)
+        if e2 == 0 and j is not None:
+            return j
+    except Exception:
+        pass
+
+    return None
+
+
+# ============================================================
+# PLACE (inline version of stack_cycle_11)
+# ============================================================
+def _place_one_stack(robot, reconnect, state: Dict[str, Any], home_joint6, tool=0, user=0) -> Dict[str, Any]:
+    """
+    A(MoveJ) -> DROP(MoveCart) -> Gripper OPEN -> A(MoveJ) -> HOME(MoveJ) -> counter++
+    """
+    if home_joint6 is None:
+        return {"ok": False, "msg": "home_joint6 없음 (2번으로 홈 위치 저장 필요)"}
+
+    cnt = int(state.get("stack_counter", 0))
+
+    drop = list(getattr(rc, "WP11_DROP_BASE_POSE"))
+    drop[2] = float(drop[2]) + float(getattr(rc, "STACK_Z_STEP_MM", 0.0)) * cnt
+
+    zmax = getattr(rc, "STACK_Z_MAX_MM", None)
+    if zmax is not None and float(drop[2]) > float(zmax):
+        return {"ok": False, "msg": f"DROP Z too high: {drop[2]:.1f} > {float(zmax):.1f}", "drop": drop}
+
+    print(f"\n[PLACE] counter={cnt} dropZ={drop[2]:.1f}")
+
+    # 1) A
+    r = _safe_call(
+        robot.MoveJ,
+        joint_pos=getattr(rc, "WP11_A_JOINT"),
+        tool=int(tool),
+        user=int(user),
+        vel=float(getattr(rc, "MOVEJ_VEL_WP11", 30.0)),
+        blendT=float(getattr(rc, "MOVEJ_BLENDT_WP11", -1.0)),
+        reconnect=reconnect,
+    )
+    if int(r) != 0:
+        return {"ok": False, "msg": f"MoveJ(A) err={r}"}
+
+    # 2) DROP (MoveCart)
+    v0 = float(getattr(rc, "MOVE_CART_VEL_DEFAULT", 20.0))
+    r = _safe_call(robot.MoveCart, drop, int(tool), int(user), v0, 0.0, 100.0, -1.0, -1, reconnect=reconnect)
+    if int(r) != 0:
+        # 112 등 실패 시 fallback 속도 재시도
+        v_fbs = list(getattr(rc, "MOVE_CART_VEL_FALLBACKS", [10.0, 5.0]))
+        for vv in v_fbs:
+            r = _safe_call(robot.MoveCart, drop, int(tool), int(user), float(vv), 0.0, 100.0, -1.0, -1, reconnect=reconnect)
+            if int(r) == 0:
+                break
+    if int(r) != 0:
+        return {"ok": False, "msg": f"MoveCart(DROP) err={r}", "drop": drop}
+
+    # 3) OPEN (놓기)
+    try:
+        gc.gripper_open(robot=robot, reconnect=reconnect, state=state)
+    except Exception as e:
+        return {"ok": False, "msg": f"gripper_open failed: {e}", "drop": drop}
+
+    # 4) A back
+    r = _safe_call(
+        robot.MoveJ,
+        joint_pos=getattr(rc, "WP11_A_JOINT"),
+        tool=int(tool),
+        user=int(user),
+        vel=float(getattr(rc, "MOVEJ_VEL_WP11", 30.0)),
+        blendT=float(getattr(rc, "MOVEJ_BLENDT_WP11", -1.0)),
+        reconnect=reconnect,
+    )
+    if int(r) != 0:
+        return {"ok": False, "msg": f"MoveJ(A back) err={r}"}
+
+    # 5) HOME
+    r = _safe_call(
+        robot.MoveJ,
+        joint_pos=home_joint6,
+        tool=int(tool),
+        user=int(user),
+        vel=float(getattr(rc, "MOVEJ_VEL_RETURN", 30.0)),
+        blendT=float(getattr(rc, "MOVEJ_BLENDT_RETURN", -1.0)),
+        reconnect=reconnect,
+    )
+    if int(r) != 0:
+        return {"ok": False, "msg": f"MoveJ(HOME) err={r}"}
+
+    state["stack_counter"] = cnt + 1
+    return {"ok": True, "msg": f"PLACE done. counter->{state['stack_counter']}", "drop": drop}
+
+
+# ============================================================
+# CMD12: Auto Pick & Place loop
+# ============================================================
 def cmd12(robot, reconnect=None) -> Dict[str, Any]:
     """
-    ✅ main 12번용:
+    ✅ 12번:
       N 입력받고
-      (3->4->5->6) pick 수행
-      HOME(그리퍼 유지)
-      place(cmd11_stack_cycle) 수행 (DROP에서 OPEN, 끝에 HOME)
+      HOME(정렬) ->
+      [3] measure_avg ->
+      [4] build target ->
+      [5] IK check ->
+      [6] smooth pick ->
+      HOME only(그리퍼 유지) ->
+      PLACE(A->DROP->OPEN->A->HOME, counter++)
       반복
     """
     if robot is None:
@@ -58,12 +192,16 @@ def cmd12(robot, reconnect=None) -> Dict[str, Any]:
         print("[12] 숫자 입력이 아닙니다.")
         return {"ok": False, "msg": "invalid count"}
 
-    # state는 gripper/stack_counter 공유 (gc가 내부 dict 관리)
     state = gc.get_state()
     state.setdefault("stack_counter", 0)
 
     tool = int(getattr(rc, "TOOL_ID", 0))
     user = int(getattr(rc, "USER_ID", 0))
+
+    home_joint6 = _get_home_joint6(robot, reconnect=reconnect)
+    if home_joint6 is None:
+        print("[12] home_joint6를 못 찾았음. 2번(홈 저장)부터 하세요.")
+        return {"ok": False, "msg": "home_joint6 missing"}
 
     print(f"\n[12] Auto Pick&Place start: {n} cycles (stack_counter={state.get('stack_counter', 0)})")
 
@@ -72,7 +210,7 @@ def cmd12(robot, reconnect=None) -> Dict[str, Any]:
         print(f"[12] Cycle {i+1}/{n}")
         print("=" * 60)
 
-        # (선택) 시작은 HOME으로 정렬(그리퍼 유지)
+        # 0) 시작 HOME 정렬(그리퍼 유지)
         out_home0 = rh.cmd_home_only(robot, reconnect=reconnect)
         if not out_home0.get("ok", False):
             print("[12] HOME(prepare) FAIL:", out_home0.get("msg", ""))
@@ -80,46 +218,42 @@ def cmd12(robot, reconnect=None) -> Dict[str, Any]:
 
         # 3) Measure (cache)
         print("[12] Step3: measure_avg")
-        mb.cmd_measure_avg()  # 내부 캐시에 last_measure 저장한다고 가정
+        mb.cmd_measure_avg()
         time.sleep(0.05)
 
         # 4) Build target from last
         print("[12] Step4: build target from last")
         tp.cmd_build_target_from_last(robot, reconnect=reconnect, use_last_pose=True)
 
-        # target이 캐시에 들어갔는지 확인 (함수 있으면)
-        if hasattr(tp, "get_last_target_pose6"):
-            if tp.get_last_target_pose6() is None:
-                print("[12] target 생성 실패(캐시 없음)")
-                return {"ok": False, "msg": "target cache missing", "cycle": i+1}
+        if hasattr(tp, "get_last_target_pose6") and tp.get_last_target_pose6() is None:
+            print("[12] target 생성 실패(캐시 없음)")
+            return {"ok": False, "msg": "target cache missing", "cycle": i+1}
 
         # 5) IK check (cache: phase0)
         print("[12] Step5: IK check from last")
         ik.cmd_check_target_from_last(robot, reconnect=reconnect)
 
-        if hasattr(ik, "get_last_phase0_pose6"):
-            if ik.get_last_phase0_pose6() is None:
-                print("[12] IK 체크 실패(phase0 캐시 없음)")
-                return {"ok": False, "msg": "phase0 cache missing", "cycle": i+1}
+        if hasattr(ik, "get_last_phase0_pose6") and ik.get_last_phase0_pose6() is None:
+            print("[12] IK 체크 실패(phase0 캐시 없음)")
+            return {"ok": False, "msg": "phase0 cache missing", "cycle": i+1}
 
-        # 6) Smooth pick (uses cached target/phase0)
+        # 6) Smooth pick
         print("[12] Step6: smooth pick (cmd6)")
         out_pick = sa.cmd6(robot, reconnect=reconnect)
         if not out_pick.get("ok", False):
             print("[12] PICK FAIL:", out_pick.get("msg", ""))
             return {"ok": False, "msg": "pick fail", "cycle": i+1, "detail": out_pick}
 
-        # ✅ 픽업 후 HOME(그리퍼 유지) — cmd8 쓰면 OPEN돼서 박스 떨어짐!
+        # 7) HOME only (carry)
         print("[12] Step7: HOME only (carry box)")
         out_home1 = rh.cmd_home_only(robot, reconnect=reconnect)
         if not out_home1.get("ok", False):
             print("[12] HOME(carry) FAIL:", out_home1.get("msg", ""))
             return {"ok": False, "msg": "home carry fail", "cycle": i+1}
 
-        # Place: A -> DROP -> OPEN -> A -> HOME (stack_counter++)
-        print("[12] Step8: PLACE (stack_cycle_11)")
-        home_joint6 = rs.get_initial_joint6() if hasattr(rs, "get_initial_joint6") else None
-        out_place = sc.cmd11_stack_cycle(
+        # 8) PLACE inline
+        print("[12] Step8: PLACE (A->DROP->OPEN->A->HOME)")
+        out_place = _place_one_stack(
             robot=robot,
             reconnect=reconnect,
             state=state,
