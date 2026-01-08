@@ -12,7 +12,7 @@ from robot import j4_rotate as j4r
 from robot import j6_rotate as j6r
 from robot import auto_pick_place as ap
 
-from vision import measure_box as mb
+from vision import measure_box_2 as mb
 
 
 def print_menu():

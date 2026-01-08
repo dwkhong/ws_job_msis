@@ -235,12 +235,7 @@ def cmd_smooth_auto(
 # - 4번(target_pose 캐시)
 # - 5번(ik_check 캐시: phase0)
 # ============================================================
-def cmd6(robot, reconnect=None) -> Dict[str, Any]:
-    """
-    main.py:
-      elif cmd == "6":
-          sa.cmd6(cf.get_robot(), reconnect=_reconnect)
-    """
+def cmd6(robot, reconnect=None, state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     if robot is None:
         print("[6] Robot not connected. (0번 먼저)")
         return {"ok": False, "msg": "robot is None"}
@@ -263,12 +258,16 @@ def cmd6(robot, reconnect=None) -> Dict[str, Any]:
     user = int(getattr(rc, "USER_ID", 0))
     auto_grip_close = bool(getattr(rc, "AUTO_GRIP_CLOSE", True))
 
+    # ✅ 여기 핵심
+    if state is None:
+        state = gc.get_state()
+
     out = cmd_smooth_auto(
         robot,
         reconnect=reconnect,
         target_pose6=target,
         phase0_pose6=phase0,
-        state=_STATE,
+        state=state,   # ✅ _STATE 제거
         tool=tool,
         user=user,
         auto_grip_close=auto_grip_close,

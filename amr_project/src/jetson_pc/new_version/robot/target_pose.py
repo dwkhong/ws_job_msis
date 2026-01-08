@@ -5,6 +5,8 @@ from typing import Dict, List, Sequence, Tuple, Union, Optional
 import numpy as np
 
 from . import robot_config as rc
+from vision import measure_box_2 as mb
+from . import robot_state as rs
 
 Pose6 = Union[List[float], Tuple[float, float, float, float, float, float]]
 MeasureDict = Dict[str, Union[int, float, str]]
@@ -129,8 +131,7 @@ def build_target_pose_with_debug(current_tcp_pose6: Pose6, measure_res: MeasureD
 # ============================================================
 def cmd_build_target_from_last(robot=None, reconnect=None, use_last_pose: bool = True) -> Optional[Dict[str, object]]:
     # lazy import (순환 import 방지)
-    from vision import measure_box as mb
-    from . import robot_state as rs
+   
 
     meas = mb.get_last_measure_avg() if hasattr(mb, "get_last_measure_avg") else None
     if meas is None:

@@ -15,7 +15,7 @@ class VisionConfig:
     # camera stream 
     # (Realsense는 640x640 출력을 지원하지 않으므로, 640x480으로 설정)
     width: int = 640
-    height: int = 320
+    height: int = 480
     fps: int = 30      # 30fps 권장
 
     # sampling
@@ -39,7 +39,7 @@ class VisionConfig:
     max_consec_skips_reset: int = 15
 
     # preview / overlay
-    show_preview: bool = False
+    show_preview: bool = True
     preview_win_name: str = "OBB + center"
     show_overlay: bool = True
     overlay_font_scale: float = 0.6
@@ -48,6 +48,6 @@ class VisionConfig:
 
 
 DEFAULT_VISION_CONFIG = VisionConfig(
-    model_path=r"/eddie/model/model_obj/best_obj_20251218.engine"
+    model_path=r"/ws_job_msis/amr_project/src/jetson_pc/model/model_obj/best_obj_20251218.pt"
     #model_path=r"/eddie/model/model_obj/best_obj_20251218.pt"
 )
