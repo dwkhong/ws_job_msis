@@ -3,7 +3,7 @@
 # -------------------------
 # Model
 # -------------------------
-MODEL_PATH = "/ws_job_msis/amr_project/src/jetson_pc/model/model_obj/best_obj_20251218.pt"
+MODEL_PATH = "/ws_job_msis/amr_project/src/jetson_pc/model/model_obj/best_obj_20260113.pt"
 CONF_THRES = 0.85
 IOU_THRES  = 0.85
 
@@ -19,7 +19,7 @@ FPS    = 30
 # -------------------------
 # Sampling
 # -------------------------
-AVG_N       = 10
+AVG_N       = 25
 TIMEOUT_SEC = 25.0
 # -------------------------
 # Depth ROI (meters)
@@ -42,7 +42,7 @@ MAX_CONSEC_SKIPS_RESET = 15
 # -------------------------
 # Preview / overlay
 # -------------------------
-SHOW_PREVIEW = False
+SHOW_PREVIEW = True
 PREVIEW_WIN_NAME = "OBB + center"
 
 SHOW_OVERLAY = True

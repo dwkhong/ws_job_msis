@@ -48,22 +48,22 @@ SEARCH_RX_LIST = [0, 1, -1, 2, -2, 3, -3, 5, -5, 8, -8, 12, -12, 15, -15]
 SEARCH_RY_LIST = [0, 1, -1, 2, -2, 3, -3, 5, -5, 8, -8, 12, -12, 15, -15]
 
 # ============================================================
-# J6 회전 설정 (j6_rotate.py에서 사용)
+# J6 회전 설정
 # ============================================================
 ANGLE_TO_J6_SIGN = +1.0
 J6_MAX_STEP_DEG = 45.0
-J4_MAX_STEP_DEG = 45.0  # J4 최대 회전 각도
+J4_MAX_STEP_DEG = 45.0
 
-MOVEJ_VEL_J6 = 90.0
-MOVEJ_BLENDT_J6 = -1.0
-MOVEJ_VEL_J4 = 90.0
-MOVEJ_BLENDT_J4 = -1.0
+MOVEJ_VEL_J6 = 100.0              # ⭐ 최대 속도
+MOVEJ_BLENDT_J6 = -1          # ⭐ 블렌딩 활성화
+MOVEJ_VEL_J4 = 100.0              # ⭐ 최대 속도
+MOVEJ_BLENDT_J4 = -1           # ⭐ 블렌딩 활성화
 
 # ============================================================
 # Target RY 설정
 # ============================================================
 TARGET_RY_DEG = 2.0
-TARGET_RY_CAND_LIST = [2.0, 1.0, 0.0]  # IK 검증 시 시도할 RY 후보 리스트
+TARGET_RY_CAND_LIST = [2.0, 1.0, 0.0]
 
 # ============================================================
 # Step 설정 (7번용)
@@ -84,36 +84,36 @@ Z_TOL_MM = 2
 STEP_TRY_LIST_DEFAULT = [STEP_SCALE_DEFAULT, 0.05, 0.02, 0.01]
 
 # ============================================================
-# SPEED CONFIG (속도 설정)
+# SPEED CONFIG - 최적화 (블렌딩 적용)
 # ============================================================
-MOVE_CART_VEL_DEFAULT = 90.0          # 기본 속도
-MOVE_CART_VEL_FALLBACKS = [15.0, 8.0, 3.0]
+MOVE_CART_VEL_DEFAULT = 100.0         # ⭐ 최대 속도
+MOVE_CART_VEL_FALLBACKS = [50.0, 20.0, 10.0]
 MOVE_CART_VEL_LIST = [MOVE_CART_VEL_DEFAULT] + MOVE_CART_VEL_FALLBACKS
 
-MOVE_CART_ACC = 50.0                  # 가속도
-MOVE_CART_OVL = 20.0                  # override(%)
-MOVE_CART_BLENDT = -1.0               # blending time
-MOVE_CART_EX = -1                     # 확장 옵션
+MOVE_CART_ACC = 0.0                   # SDK에서 사용 안 함
+MOVE_CART_OVL = 100.0                 # ⭐ 최대 스케일링
+MOVE_CART_BLENDT = -1             # ⭐ 블렌딩 (멈추지 않고 이동)
+MOVE_CART_EX = -1
 
-MOVEJ_VEL_RETURN = 90.0
-MOVEJ_BLENDT_RETURN = -1.0
+MOVEJ_VEL_RETURN = 100.0              # ⭐ 최대 속도
+MOVEJ_BLENDT_RETURN = -1           # ⭐ 블렌딩
 
-MOVEJ_VEL_WP11 = 90.0
-MOVEJ_BLENDT_WP11 = -1.0
+MOVEJ_VEL_WP11 = 100.0                # ⭐ 최대 속도
+MOVEJ_BLENDT_WP11 = -1            # ⭐ 블렌딩
 
 # ============================================================
 # GRIPPER CONFIG (그리퍼 설정)
 # ============================================================
 GRIPPER_INDEX = 1
 GRIPPER_MAX_TIME = 30000
-GRIPPER_SPEED = 90
+GRIPPER_SPEED = 100                   # ⭐ 90 → 100 (최대 속도)
 GRIPPER_FORCE = 50
 GRIPPER_BLOCK = 1
 
 GRIP_OPEN_POS = 100
 GRIP_CLOSE_POS = 25
 
-AUTO_GRIP_CLOSE = True  # 자동 그리퍼 닫기 여부
+AUTO_GRIP_CLOSE = True
 
 # ============================================================
 # 스택 사이클 설정 (11번)
@@ -124,4 +124,4 @@ WP11_A_JOINT = [-62.004, -65.272, -103.647, -100.183, 89.741, 118.013]
 WP11_DROP_BASE_POSE = [94.070, -407.414, 247.161, -178.769, -0.710, 90.880]
 
 STACK_Z_STEP_MM = 58.0
-STACK_Z_MAX_MM = 600.0  # None이면 제한 없음
+STACK_Z_MAX_MM = 600.0
