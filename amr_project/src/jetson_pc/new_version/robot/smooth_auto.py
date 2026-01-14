@@ -168,8 +168,8 @@ def cmd_smooth_auto(
 ) -> Dict[str, Any]:
     """
     ✅ 자동 접근(phase0) -> 하강(target) -> (옵션) 그리퍼 닫기
-    - target_pose6 : 4번에서 계산된 최종 타겟
-    - phase0_pose6 : 5번(ik_check)에서 계산된 안전 진입점
+    - target_pose6 : 최종 내려갈 타겟 (✅ IK가 보정한 ok_target도 가능)
+    - phase0_pose6 : 안전 진입점
     """
     if robot is None:
         return {"ok": False, "msg": "robot is None"}
@@ -231,20 +231,37 @@ def cmd_smooth_auto(
 
 
 # ============================================================
+# ✅ target 선택 로직 (핵심 패치)
+#  - 기본: tp.get_last_target_pose6()
+#  - 우선: ik.get_last_ok_target_pose6() 가 있으면 그것을 target으로 사용
+# ============================================================
+def _get_best_target_and_phase0():
+    from . import target_pose as tp
+    from . import ik_check as ik
+
+    target = tp.get_last_target_pose6() if hasattr(tp, "get_last_target_pose6") else None
+
+    # ✅ IK에서 성공한 ok_target이 있으면 그것을 우선 사용
+    if hasattr(ik, "get_last_ok_target_pose6"):
+        ok_t = ik.get_last_ok_target_pose6()
+        if ok_t is not None:
+            target = ok_t
+
+    phase0 = ik.get_last_phase0_pose6() if hasattr(ik, "get_last_phase0_pose6") else None
+    return target, phase0
+
+
+# ============================================================
 # ✅ main 6번: 캐시 기반 1줄 호출용 (한 번에)
 # - 4번(target_pose 캐시)
-# - 5번(ik_check 캐시: phase0)
+# - 5번(ik_check 캐시: phase0 + (옵션) ok_target)
 # ============================================================
 def cmd6(robot, reconnect=None, state: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     if robot is None:
         print("[6] Robot not connected. (0번 먼저)")
         return {"ok": False, "msg": "robot is None"}
 
-    from . import target_pose as tp
-    from . import ik_check as ik
-
-    target = tp.get_last_target_pose6() if hasattr(tp, "get_last_target_pose6") else None
-    phase0 = ik.get_last_phase0_pose6() if hasattr(ik, "get_last_phase0_pose6") else None
+    target, phase0 = _get_best_target_and_phase0()
 
     if target is None:
         print("[6] last target 없음 (4번 먼저)")
@@ -258,7 +275,6 @@ def cmd6(robot, reconnect=None, state: Optional[Dict[str, Any]] = None) -> Dict[
     user = int(getattr(rc, "USER_ID", 0))
     auto_grip_close = bool(getattr(rc, "AUTO_GRIP_CLOSE", True))
 
-    # ✅ 여기 핵심
     if state is None:
         state = gc.get_state()
 
@@ -267,7 +283,7 @@ def cmd6(robot, reconnect=None, state: Optional[Dict[str, Any]] = None) -> Dict[
         reconnect=reconnect,
         target_pose6=target,
         phase0_pose6=phase0,
-        state=state,   # ✅ _STATE 제거
+        state=state,
         tool=tool,
         user=user,
         auto_grip_close=auto_grip_close,
@@ -295,11 +311,7 @@ def cmd7(robot, reconnect=None) -> Dict[str, Any]:
         cmd7_reset()
         return {"ok": False, "msg": "robot is None"}
 
-    from . import target_pose as tp
-    from . import ik_check as ik
-
-    target = tp.get_last_target_pose6() if hasattr(tp, "get_last_target_pose6") else None
-    phase0 = ik.get_last_phase0_pose6() if hasattr(ik, "get_last_phase0_pose6") else None
+    target, phase0 = _get_best_target_and_phase0()
 
     if target is None:
         print("[7] last target 없음 (4번 먼저)")
@@ -384,6 +396,8 @@ def cmd7(robot, reconnect=None) -> Dict[str, Any]:
 def get_state() -> Dict[str, Any]:
     return gc.get_state()
 
+
 def reset_state() -> None:
     gc.reset_state()
     cmd7_reset()
+

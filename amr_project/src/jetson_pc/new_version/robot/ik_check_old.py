@@ -27,12 +27,6 @@ def _ensure_joint6(j: Sequence[Union[int, float]]) -> List[float]:
     return [float(x) for x in j[:6]]
 
 
-def _wrap_deg_180(a: float) -> float:
-    """deg -> [-180, 180)"""
-    a = float(a)
-    return (a + 180.0) % 360.0 - 180.0
-
-
 def _is_timeout_like(e: Exception) -> bool:
     s = str(e).lower()
     return ("timeout" in s) or ("timed out" in s) or ("实时数据失败" in str(e))
@@ -73,48 +67,6 @@ def _has_solution(robot, pose6: Pose6, cur_joint6: Joint6, reconnect=None) -> bo
     return (int(err) == 0) and bool(ok)
 
 
-def _target_variants_rz_ry(
-    target_pose6: Pose6,
-    ry_cands: Sequence[Union[int, float]],
-) -> List[List[float]]:
-    """
-    ✅ A + (ry 0~2 후보)
-    - rz: wrap(-180~180) 후 ±360 표현 후보
-    - ry: [2,1,0] 등 후보만
-    """
-    t = _ensure_pose6(target_pose6)
-    base_rx = float(t[3])
-    base_ry = float(t[4])
-    base_rz = float(t[5])
-
-    rz_wrap = _wrap_deg_180(base_rz)
-    rz_list = [rz_wrap, rz_wrap + 360.0, rz_wrap - 360.0]
-
-    out: List[List[float]] = []
-    seen = set()
-
-    # ✅ 우선은 원래 ry가 후보 리스트에 없으면 맨 앞에 넣어줌(의도 보존)
-    ry_list = list(ry_cands) if ry_cands else [base_ry]
-    if all(abs(float(x) - base_ry) > 1e-6 for x in ry_list):
-        ry_list = [base_ry] + ry_list
-
-    for ry in ry_list:
-        for rz in rz_list:
-            cand = t.copy()
-            cand[3] = base_rx
-            cand[4] = float(ry)
-            cand[5] = float(rz)
-
-            # 중복 제거 키(ry, wrap(rz))
-            key = (round(cand[4], 3), round(_wrap_deg_180(cand[5]), 3))
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(cand)
-
-    return out
-
-
 def fmt_pose6(pose6: Pose6) -> str:
     x, y, z, rx, ry, rz = _ensure_pose6(pose6)
     return f"[x,y,z,rx,ry,rz]=[{x:.3f}, {y:.3f}, {z:.3f}, {rx:.3f}, {ry:.3f}, {rz:.3f}]"
@@ -133,16 +85,6 @@ def get_last_phase0_pose6() -> Optional[List[float]]:
     return None
 
 
-def get_last_ok_target_pose6() -> Optional[List[float]]:
-    """
-    ✅ target IK가 원본(target_pose) 그대로는 실패했는데
-    ry 후보 or rz 표현(±360)으로 성공한 '실사용 target'을 반환
-    """
-    if _LAST_IK_RESULT and _LAST_IK_RESULT.get("ok"):
-        return _LAST_IK_RESULT.get("ok_target_pose6")
-    return None
-
-
 # ============================================================
 # main API
 # ============================================================
@@ -155,10 +97,9 @@ def check_target_ik(
     z_hold_offset_mm: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
-    ✅ target IK 안정화:
-    - rz wrap/±360 재시도
-    - ry 후보(기본: [2,1,0]) 재시도  (수직 잡기 목적 유지)
-    - 성공한 ok_target_pose6를 결과에 포함 (후속 MoveCart에서 이걸 쓰는 게 안전)
+    ✅ "타겟은 건드리지 않음"
+    - target_pose6: 4번에서 계산된 목표 포즈
+    - cur_joint6   : 2번에서 읽어온 현재 관절(캐시)
     """
     global _LAST_IK_RESULT
 
@@ -168,57 +109,39 @@ def check_target_ik(
         return out
 
     cur_joint6 = _ensure_joint6(cur_joint6)
-    target_in = _ensure_pose6(target_pose6)
+    target = _ensure_pose6(target_pose6)
 
-    # ✅ ry 후보 리스트 (네 의도대로 0~2 범위)
-    ry_cands = list(getattr(rc, "TARGET_RY_CAND_LIST", [2.0, 1.0, 0.0]))
-
-    # 0) target IK (A + ry 후보로 재시도)
-    ok_target: Optional[List[float]] = None
-    tries = 0
+    # 0) target IK
     try:
-        for cand in _target_variants_rz_ry(target_in, ry_cands):
-            tries += 1
-            if _has_solution(robot, cand, cur_joint6, reconnect=reconnect):
-                ok_target = cand
-                break
+        target_ok = _has_solution(robot, target, cur_joint6, reconnect=reconnect)
     except Exception as e:
-        out = {
-            "ok": False,
-            "msg": f"target IK check exception: {e}",
-            "target_pose6": target_in,
-            "ok_target_pose6": None,
-            "phase0_pose6": None,
-        }
+        out = {"ok": False, "msg": f"target IK check exception: {e}", "target_pose6": target}
         _LAST_IK_RESULT = out
         return out
 
-    if ok_target is None:
+    if not target_ok:
         out = {
             "ok": False,
             "target_ok": False,
             "phase0_ok": False,
-            "target_pose6": target_in,
-            "ok_target_pose6": None,
+            "target_pose6": target,
             "phase0_pose6": None,
             "mode": "TARGET_FAIL",
-            "tries": tries,
-            "msg": "target IK not solvable (tried rz wrap/±360 + ry candidates)",
+            "tries": 1,
+            "msg": "target IK not solvable",
         }
         _LAST_IK_RESULT = out
         return out
 
-    # 여기서부터는 ok_target 기준으로 phase0를 만들고 체크하는게 안전
     if not check_phase0:
         out = {
             "ok": True,
             "target_ok": True,
             "phase0_ok": True,
-            "target_pose6": target_in,
-            "ok_target_pose6": ok_target,
+            "target_pose6": target,
             "phase0_pose6": None,
             "mode": "NO_PHASE0",
-            "tries": tries,
+            "tries": 1,
             "msg": "target OK (phase0 skipped)",
         }
         _LAST_IK_RESULT = out
@@ -226,10 +149,11 @@ def check_target_ik(
 
     zoff = float(getattr(rc, "Z_HOLD_OFFSET_MM", 70.0) if z_hold_offset_mm is None else z_hold_offset_mm)
 
-    # 1) phase0 strict: ok_target + Z만 위로
-    phase0_strict = list(ok_target)
+    # 1) phase0 strict: 타겟 그대로 + Z만 위로
+    phase0_strict = list(target)
     phase0_strict[2] = float(phase0_strict[2] + zoff)
 
+    tries = 0
     try:
         tries += 1
         if _has_solution(robot, phase0_strict, cur_joint6, reconnect=reconnect):
@@ -237,8 +161,7 @@ def check_target_ik(
                 "ok": True,
                 "target_ok": True,
                 "phase0_ok": True,
-                "target_pose6": target_in,
-                "ok_target_pose6": ok_target,
+                "target_pose6": target,
                 "phase0_pose6": phase0_strict,
                 "mode": "STRICT",
                 "tries": tries,
@@ -247,13 +170,7 @@ def check_target_ik(
             _LAST_IK_RESULT = out
             return out
     except Exception as e:
-        out = {
-            "ok": False,
-            "msg": f"phase0 strict IK exception: {e}",
-            "target_pose6": target_in,
-            "ok_target_pose6": ok_target,
-            "phase0_pose6": None,
-        }
+        out = {"ok": False, "msg": f"phase0 strict IK exception: {e}", "target_pose6": target}
         _LAST_IK_RESULT = out
         return out
 
@@ -261,9 +178,9 @@ def check_target_ik(
     rx_list = list(getattr(rc, "SEARCH_RX_LIST", [0, 1, -1, 2, -2, 3, -3, 5, -5]))
     ry_list = list(getattr(rc, "SEARCH_RY_LIST", [0, 1, -1, 2, -2, 3, -3, 5, -5]))
 
-    base_rx = float(ok_target[3])
-    base_ry = float(ok_target[4])
-    base_rz = float(ok_target[5])
+    base_rx = float(target[3])
+    base_ry = float(target[4])
+    base_rz = float(target[5])
 
     timeout_sec = float(getattr(rc, "SEARCH_TIMEOUT_SEC", 6.0))
     max_tries = int(getattr(rc, "SEARCH_MAX_TRIES", 900))
@@ -300,8 +217,7 @@ def check_target_ik(
             "ok": False,
             "target_ok": True,
             "phase0_ok": False,
-            "target_pose6": target_in,
-            "ok_target_pose6": ok_target,
+            "target_pose6": target,
             "phase0_pose6": None,
             "mode": "PHASE0_FAIL",
             "tries": tries,
@@ -314,8 +230,7 @@ def check_target_ik(
         "ok": True,
         "target_ok": True,
         "phase0_ok": True,
-        "target_pose6": target_in,
-        "ok_target_pose6": ok_target,
+        "target_pose6": target,
         "phase0_pose6": best,
         "mode": "SEARCH_TILT",
         "tries": tries,
@@ -348,6 +263,7 @@ def cmd_check_target_from_last(robot=None, reconnect=None, check_phase0: bool = 
     if hasattr(rs, "get_last_joint6"):
         last_joint = rs.get_last_joint6()
     else:
+        # 구버전 대비
         _, last_joint = rs.get_last_pose_joint() if hasattr(rs, "get_last_pose_joint") else (None, None)
 
     # target 캐시
@@ -371,17 +287,17 @@ def cmd_check_target_from_last(robot=None, reconnect=None, check_phase0: bool = 
         check_phase0=check_phase0,
     )
 
-    # 출력
+    # 최소 출력(원하면 여기 출력 더 줄여도 됨)
     if res.get("ok"):
         print(f"[IK] OK  mode={res.get('mode')}  tries={res.get('tries')}")
-        print("[IK] target(in):", fmt_pose6(res["target_pose6"]))
-        if res.get("ok_target_pose6") is not None:
-            print("[IK] target(ok):", fmt_pose6(res["ok_target_pose6"]))
+        print("[IK] target :", fmt_pose6(res["target_pose6"]))
         if res.get("phase0_pose6") is not None:
-            print("[IK] phase0    :", fmt_pose6(res["phase0_pose6"]))
+            print("[IK] phase0 :", fmt_pose6(res["phase0_pose6"]))
     else:
         print(f"[IK] FAIL: {res.get('msg')}")
         if res.get("target_pose6") is not None:
             print("[IK] target :", fmt_pose6(res["target_pose6"]))
 
     return res
+
+
