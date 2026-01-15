@@ -184,6 +184,189 @@ class AutoPickPlace:
         }
     
     # -------------------------
+    # 명령 (13번 기능 - Quick Start)
+    # -------------------------
+    def cmd13_quick_start(self, reconnect_cb: Optional[Callable] = None) -> Dict[str, Any]:
+        """
+        13번: Quick Start - 자동 초기화 후 4개 박스 이동
+        0번 (연결) → 1번 (Vision ON) → 2번 (Home 저장) → 12번 (4개 자동)
+        
+        Args:
+            reconnect_cb: 재연결 콜백
+        
+        Returns:
+            결과 딕셔너리
+        """
+        print("\n" + "=" * 60)
+        print("[13] Quick Start - 자동 초기화 및 4개 박스 이동")
+        print("=" * 60)
+        
+        # 0) 로봇 연결
+        if not self.connector.is_connected():
+            print("[13] Step 0: 로봇 연결 중...")
+            success = self.connector.connect()
+            if not success:
+                print("[13] ❌ 로봇 연결 실패")
+                return {"ok": False, "msg": "robot connection failed"}
+            print("[13] ✅ 로봇 연결 완료")
+        else:
+            print("[13] ✅ 로봇 이미 연결됨")
+        
+        # 1) Vision ON
+        if not self.box_detector.is_running():
+            print("[13] Step 1: Vision 시작 중...")
+            success = self.box_detector.start()
+            if not success:
+                print("[13] ❌ Vision 시작 실패")
+                return {"ok": False, "msg": "vision start failed"}
+            print("[13] ✅ Vision 시작 완료")
+            time.sleep(1.0)  # 카메라 안정화 대기
+        else:
+            print("[13] ✅ Vision 이미 실행 중")
+        
+        # 2) Home 위치 저장
+        print("[13] Step 2: 현재 위치를 Home으로 저장 중...")
+        try:
+            (e1, pose), (e2, joint) = self.robot_state.read_pose_joint(reconnect_cb=reconnect_cb)
+            if e2 == 0 and joint is not None:
+                self.robot_state.set_initial_joint6(joint)
+                print(f"[13] ✅ Home 위치 저장 완료: {self.robot_state.fmt_joint(joint)}")
+            else:
+                print("[13] ❌ Home 위치 저장 실패")
+                return {"ok": False, "msg": "home position save failed"}
+        except Exception as e:
+            print(f"[13] ❌ Home 위치 저장 중 에러: {e}")
+            return {"ok": False, "msg": f"home save error: {e}"}
+        
+        # 3) 자동으로 4개 박스 이동
+        print("\n[13] Step 3: 자동으로 4개 박스 이동 시작")
+        print("=" * 60)
+        
+        # 스택 카운터 리셋 여부 확인
+        if self._stack_counter > 0:
+            print(f"[13] 현재 스택 카운터: {self._stack_counter}")
+            reset = input("스택 카운터를 0으로 리셋할까요? (y/n) > ").strip().lower()
+            if reset == 'y':
+                self._stack_counter = 0
+                print("[13] 스택 카운터 리셋 완료")
+        
+        # Home joint 가져오기
+        home_joint6 = self.get_home_joint6(reconnect_cb=reconnect_cb)
+        if home_joint6 is None:
+            print("[13] ❌ home_joint6를 못 찾았음")
+            return {"ok": False, "msg": "home_joint6 missing"}
+        
+        # Vision restart 허용으로 시작
+        self.set_vision_allow_restart(True)
+        
+        # 4개 박스 자동 이동
+        n = 4
+        try:
+            for i in range(n):
+                print("\n" + "=" * 60)
+                print(f"[13] Cycle {i+1}/{n}")
+                print("=" * 60)
+                
+                # 0) HOME 정렬
+                out_home0 = self.return_home.cmd_home_only(reconnect_cb=reconnect_cb)
+                if not out_home0.get("ok", False):
+                    print(f"[13] ❌ Cycle {i+1}: HOME(prepare) FAIL:", out_home0.get("msg", ""))
+                    return {"ok": False, "msg": "home prepare fail", "cycle": i+1, "completed": i}
+                
+                # HOME 후 캐시 갱신 (cmd를 사용하여 캐시 저장)
+                print(f"[13] Cycle {i+1}: 현재 위치 읽기...")
+                result = self.robot_state.cmd_read_pose_joint(reconnect_cb=reconnect_cb)
+                if result is None:
+                    print(f"[13] ❌ Cycle {i+1}: 위치 읽기 실패")
+                    return {"ok": False, "msg": "pose read failed", "cycle": i+1, "completed": i}
+                print(f"[13] Cycle {i+1}: ✅ 위치 읽기 완료")
+                
+                # 3) Measure
+                print(f"[13] Cycle {i+1}: 측정 중...")
+                self.set_vision_allow_restart(True)
+                meas = self.box_detector.cmd_measure_avg()
+                time.sleep(0.05)
+                
+                if meas is None:
+                    print(f"[13] ❌ Cycle {i+1}: 측정 실패")
+                    return {"ok": False, "msg": "measure fail", "cycle": i+1, "completed": i}
+                
+                # 로봇 동작 중 restart 금지
+                self.set_vision_allow_restart(False)
+                
+                # 4) Build target
+                print(f"[13] Cycle {i+1}: 목표 계산 중...")
+                self.target_pose.cmd_build_target_from_last(
+                    use_last_pose=True,  # ⭐ True로 변경 (캐시 사용)
+                    reconnect_cb=reconnect_cb
+                )
+                
+                if self.target_pose.get_last_target_pose6() is None:
+                    print(f"[13] ❌ Cycle {i+1}: 목표 계산 실패")
+                    return {"ok": False, "msg": "target cache missing", "cycle": i+1, "completed": i}
+                
+                # 5) IK check
+                print(f"[13] Cycle {i+1}: IK 검증 중...")
+                self.ik_checker.cmd_check_target_from_last(
+                    check_phase0=True,
+                    reconnect_cb=reconnect_cb
+                )
+                
+                if self.ik_checker.get_last_phase0_pose6() is None:
+                    print(f"[13] ❌ Cycle {i+1}: IK 검증 실패")
+                    return {"ok": False, "msg": "phase0 cache missing", "cycle": i+1, "completed": i}
+                
+                # 6) Smooth pick
+                print(f"[13] Cycle {i+1}: Pick 중...")
+                out_pick = self.pick_place.cmd6_smooth_auto(reconnect_cb=reconnect_cb)
+                if not out_pick.get("ok", False):
+                    print(f"[13] ❌ Cycle {i+1}: PICK FAIL:", out_pick.get("msg", ""))
+                    return {"ok": False, "msg": "pick fail", "cycle": i+1, "completed": i, "detail": out_pick}
+                
+                # 7) HOME only (carry)
+                print(f"[13] Cycle {i+1}: Home으로 이동 중...")
+                out_home1 = self.return_home.cmd_home_only(reconnect_cb=reconnect_cb)
+                if not out_home1.get("ok", False):
+                    print(f"[13] ❌ Cycle {i+1}: HOME(carry) FAIL:", out_home1.get("msg", ""))
+                    return {"ok": False, "msg": "home carry fail", "cycle": i+1, "completed": i}
+                
+                # 8) PLACE
+                print(f"[13] Cycle {i+1}: Place 중...")
+                out_place = self.place_one_stack(
+                    home_joint6=home_joint6,
+                    reconnect_cb=reconnect_cb
+                )
+                if not out_place.get("ok", False):
+                    print(f"[13] ❌ Cycle {i+1}: PLACE FAIL:", out_place.get("msg", ""))
+                    return {"ok": False, "msg": "place fail", "cycle": i+1, "completed": i, "detail": out_place}
+                
+                print(f"[13] ✅ Cycle {i+1}/{n} 완료! (stack_counter={self._stack_counter})")
+                
+                # 다음 사이클 전 restart 허용
+                self.set_vision_allow_restart(True)
+            
+            print("\n" + "=" * 60)
+            print(f"[13] 🎉 Quick Start 완료! 총 {n}개 박스 이동 완료")
+            print(f"[13] 최종 스택 카운터: {self._stack_counter}")
+            print("=" * 60)
+            
+            return {
+                "ok": True,
+                "msg": "quick start done",
+                "count": n,
+                "stack_counter": self._stack_counter,
+                "completed": n
+            }
+        
+        except Exception as e:
+            print(f"[13] ❌ Exception: {e}")
+            return {"ok": False, "msg": f"exception: {e}", "completed": 0}
+        
+        finally:
+            # 어떤 종료 경로든 vision restart 허용 복구
+            self.set_vision_allow_restart(True)
+    
+    # -------------------------
     # 명령 (12번 기능)
     # -------------------------
     def cmd12_auto_loop(self, reconnect_cb: Optional[Callable] = None) -> Dict[str, Any]:
@@ -228,6 +411,14 @@ class AutoPickPlace:
         if home_joint6 is None:
             print("[12] home_joint6를 못 찾았음. 2번(홈 저장)부터 하세요.")
             return {"ok": False, "msg": "home_joint6 missing"}
+        
+        # 스택 카운터 리셋 여부 확인
+        if self._stack_counter > 0:
+            print(f"[12] 현재 스택 카운터: {self._stack_counter}")
+            reset = input("스택 카운터를 0으로 리셋할까요? (y/n) > ").strip().lower()
+            if reset == 'y':
+                self._stack_counter = 0
+                print("[12] 스택 카운터 리셋 완료")
         
         print(f"\n[12] Auto Pick&Place start: {n} cycles (stack_counter={self._stack_counter})")
         

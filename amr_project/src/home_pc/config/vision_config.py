@@ -3,7 +3,7 @@
 # -------------------------
 # Model
 # -------------------------
-MODEL_PATH = "/ws_job_msis/amr_project/src/jetson_pc/model/model_obj/best_obj_20260113.pt"
+MODEL_PATH = "/ws_job_msis/amr_project/src/jetson_pc/model/model_obj/best_obj_20260115.pt"
 CONF_THRES = 0.85
 IOU_THRES  = 0.85
 
@@ -19,8 +19,8 @@ FPS    = 30
 # -------------------------
 # Sampling
 # -------------------------
-AVG_N       = 25
-TIMEOUT_SEC = 25.0
+AVG_N       = 15
+TIMEOUT_SEC = 10.0
 # -------------------------
 # Depth ROI (meters)
 # -------------------------

@@ -27,6 +27,7 @@ def print_menu():
     print("10. J4 Rotate (input delta deg)")
     print("11. J6 Rotate (input delta deg)")
     print("12. Auto Pick&Place (N cycles)")
+    print("13. Quick Start (Auto 4 boxes)")
     print("q. Quit")
 
 
@@ -73,15 +74,15 @@ def main():
         box_detector, target_pose, ik_checker, pick_place, return_home
     )
     
-    print("🤖 Jetson Robot Vision System Started")
-    print(f"📍 Robot IP: {ROBOT_IP_DEFAULT}")
+    print(" Jetson Robot Vision System Started")
+    print(f" Robot IP: {ROBOT_IP_DEFAULT}")
     
     while True:
         print_menu()
-        cmd = input("입력 (0~12/q) > ").strip().lower()
+        cmd = input("입력 (0~13/q) > ").strip().lower()
         
         if cmd == "q":
-            print("\n👋 Shutting down...")
+            print("\n Shutting down...")
             # 종료 시 연결 해제
             if robot_connector.is_connected():
                 robot_connector.disconnect()
@@ -156,6 +157,10 @@ def main():
         # 12번: Auto Pick&Place (N cycles)
         elif cmd == "12":
             auto_pick_place.cmd12_auto_loop(reconnect_cb=lambda: robot_connector.connect())
+        
+        # 13번: Quick Start (자동 초기화 + 4개 박스)
+        elif cmd == "13":
+            auto_pick_place.cmd13_quick_start(reconnect_cb=lambda: robot_connector.connect())
         
         else:
             print("[ERROR] 잘못된 입력입니다.")
