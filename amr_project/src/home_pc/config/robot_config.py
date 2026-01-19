@@ -12,9 +12,9 @@ RPC_RETRY_SLEEP_SEC = 0.25       # 재시도 간 대기 시간 (초)
 # ============================================================
 # Camera -> Gripper Offset (mm)
 # ============================================================
-OFF_X_MM = -5.0
+OFF_X_MM = -20.0
 OFF_Y_MM = -70.0
-OFF_Z_MM = -167.0
+OFF_Z_MM = -175.0
 
 PIVOT_LENGTH = 175.0
 
@@ -48,22 +48,22 @@ SEARCH_RX_LIST = [0, 1, -1, 2, -2, 3, -3, 5, -5, 8, -8, 12, -12, 15, -15]
 SEARCH_RY_LIST = [0, 1, -1, 2, -2, 3, -3, 5, -5, 8, -8, 12, -12, 15, -15]
 
 # ============================================================
-# J6 회전 설정
+# J6 회전 설정 (j6_rotate.py에서 사용)
 # ============================================================
 ANGLE_TO_J6_SIGN = +1.0
 J6_MAX_STEP_DEG = 45.0
-J4_MAX_STEP_DEG = 45.0
+J4_MAX_STEP_DEG = 45.0  # J4 최대 회전 각도
 
-MOVEJ_VEL_J6 = 80.0              # ⭐ 최대 속도
-MOVEJ_BLENDT_J6 = -1          # ⭐ 블렌딩 활성화
-MOVEJ_VEL_J4 = 80.0              # ⭐ 최대 속도
-MOVEJ_BLENDT_J4 = -1           # ⭐ 블렌딩 활성화
+MOVEJ_VEL_J6 = 90.0
+MOVEJ_BLENDT_J6 = -1.0
+MOVEJ_VEL_J4 = 90.0
+MOVEJ_BLENDT_J4 = -1.0
 
 # ============================================================
 # Target RY 설정
 # ============================================================
 TARGET_RY_DEG = 2.0
-TARGET_RY_CAND_LIST = [2.0, 1.0, 0.0]
+TARGET_RY_CAND_LIST = [2.0, 1.0, 0.0]  # IK 검증 시 시도할 RY 후보 리스트
 
 # ============================================================
 # Step 설정 (7번용)
@@ -76,7 +76,7 @@ X_SCALE_MULT = 2.0
 # ============================================================
 Z_HOLD_OFFSET_MM = 100.0
 XY_TOL_MM = 0.5
-Z_TOL_MM = 1
+Z_TOL_MM = 2
 
 # ============================================================
 # Step try 설정 (7번용)
@@ -84,36 +84,43 @@ Z_TOL_MM = 1
 STEP_TRY_LIST_DEFAULT = [STEP_SCALE_DEFAULT, 0.05, 0.02, 0.01]
 
 # ============================================================
-# SPEED CONFIG - 최적화 (블렌딩 적용)
+# SPEED CONFIG (속도 설정)
 # ============================================================
-MOVE_CART_VEL_DEFAULT = 80.0         # ⭐ 최대 속도
-MOVE_CART_VEL_FALLBACKS = [50.0, 20.0, 10.0]
+MOVE_CART_VEL_DEFAULT = 90.0          # 기본 속도
+MOVE_CART_VEL_FALLBACKS = [15.0, 8.0, 3.0]
 MOVE_CART_VEL_LIST = [MOVE_CART_VEL_DEFAULT] + MOVE_CART_VEL_FALLBACKS
 
-MOVE_CART_ACC = 0.0                   # SDK에서 사용 안 함
-MOVE_CART_OVL = 50.0                 # ⭐ 최대 스케일링
-MOVE_CART_BLENDT = -1             # ⭐ 블렌딩 (멈추지 않고 이동)
-MOVE_CART_EX = -1
+MOVE_CART_ACC = 50.0                  # 가속도
+MOVE_CART_OVL = 20.0                  # override(%)
+MOVE_CART_BLENDT = -1.0               # blending time
+MOVE_CART_EX = -1                     # 확장 옵션
 
-MOVEJ_VEL_RETURN = 70.0              # ⭐ 최대 속도
-MOVEJ_BLENDT_RETURN = -1           # ⭐ 블렌딩
+MOVEJ_VEL_RETURN = 90.0
+MOVEJ_BLENDT_RETURN = -1.0
 
-MOVEJ_VEL_WP11 = 70.0                # ⭐ 최대 속도
-MOVEJ_BLENDT_WP11 = -1            # ⭐ 블렌딩
+MOVEJ_VEL_WP11 = 90.0
+MOVEJ_BLENDT_WP11 = -1.0
+
+# ============================================================
+# GUI 전용 속도 설정
+# ============================================================
+GUI_VEL_NORMAL = 30.0   # GUI 일반 이동 속도
+GUI_VEL_SLOW = 30.0     # GUI 정밀 접근 속도
+GUI_BLENDT = 100.0      # GUI blending time
 
 # ============================================================
 # GRIPPER CONFIG (그리퍼 설정)
 # ============================================================
 GRIPPER_INDEX = 1
 GRIPPER_MAX_TIME = 30000
-GRIPPER_SPEED = 100                   # ⭐ 90 → 100 (최대 속도)
+GRIPPER_SPEED = 90
 GRIPPER_FORCE = 50
 GRIPPER_BLOCK = 1
 
 GRIP_OPEN_POS = 100
-GRIP_CLOSE_POS = 24
+GRIP_CLOSE_POS = 25
 
-AUTO_GRIP_CLOSE = True
+AUTO_GRIP_CLOSE = True  # 자동 그리퍼 닫기 여부
 
 # ============================================================
 # 스택 사이클 설정 (11번)
@@ -121,7 +128,12 @@ AUTO_GRIP_CLOSE = True
 WP11_A_POSE = [56.655, -324.827, 515.554, 179.807, 0.914, 89.979]
 WP11_A_JOINT = [-62.004, -65.272, -103.647, -100.183, 89.741, 118.013]
 
-WP11_DROP_BASE_POSE = [94.070, -407.414, 249.161, -178.769, -0.710, 90.880]
+WP11_DROP_BASE_POSE = [94.070, -407.414, 247.161, -178.769, -0.710, 90.880]
 
-STACK_Z_STEP_MM = 58.5
-STACK_Z_MAX_MM = 600.0
+STACK_Z_STEP_MM = 58.0
+STACK_Z_MAX_MM = 600.0  # None이면 제한 없음
+
+
+
+
+

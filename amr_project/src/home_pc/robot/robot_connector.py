@@ -110,3 +110,33 @@ class RobotConnector:
             Robot.RPC 인스턴스 또는 None
         """
         return self.robot
+    
+    # -------------------------
+    # 로봇 제어 (GUI용)
+    # -------------------------
+    def stop_motion(self):
+        """로봇 모션 즉시 정지"""
+        if self.robot:
+            try:
+                self.robot.StopMotion()
+                print("[ROBOT] Motion stopped")
+            except Exception as e:
+                print(f"[ROBOT] Stop failed: {e}")
+    
+    def pause_motion(self):
+        """로봇 모션 일시 정지"""
+        if self.robot:
+            try:
+                self.robot.PauseMotion()
+                print("[ROBOT] Motion paused")
+            except Exception as e:
+                print(f"[ROBOT] Pause failed: {e}")
+    
+    def resume_motion(self):
+        """로봇 모션 재개"""
+        if self.robot:
+            try:
+                self.robot.ResumeMotion()
+                print("[ROBOT] Motion resumed")
+            except Exception as e:
+                print(f"[ROBOT] Resume failed: {e}")

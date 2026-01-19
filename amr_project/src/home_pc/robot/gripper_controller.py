@@ -146,11 +146,12 @@ class GripperController:
         time.sleep(0.3)
         return err == 0
     
-    def close(self, reconnect_cb: Optional[Callable] = None) -> bool:
+    def close(self, pos: Optional[int] = None, reconnect_cb: Optional[Callable] = None) -> bool:
         """
         그리퍼 닫기
         
         Args:
+            pos: 닫는 위치 (None이면 기본값 사용)
             reconnect_cb: 재연결 콜백
         
         Returns:
@@ -159,8 +160,10 @@ class GripperController:
         if not self.ensure_activated(reconnect_cb=reconnect_cb):
             return False
         
-        print("[GRIP] Closing gripper...")
-        err = self.move(cfg.GRIP_CLOSE_POS, reconnect_cb=reconnect_cb)
+        close_pos = pos if pos is not None else cfg.GRIP_CLOSE_POS
+        
+        print(f"[GRIP] Closing gripper to {close_pos}...")
+        err = self.move(close_pos, reconnect_cb=reconnect_cb)
         print(f"[GRIP] Close retval: {err}")
         
         if err == 0:

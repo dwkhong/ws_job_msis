@@ -249,3 +249,24 @@ class RobotMotion:
             vel=cfg.MOVEJ_VEL_J6,
             reconnect_cb=reconnect_cb
         )
+    
+    def rotate_single_joint(self, joint_index: int, delta_deg: float, 
+                           reconnect_cb: Optional[Callable] = None) -> int:
+        """
+        단일 Joint 회전 (GUI용 - 범용)
+        
+        Args:
+            joint_index: Joint 번호 (0~5, J1~J6)
+            delta_deg: 회전 각도 (deg)
+            reconnect_cb: 재연결 콜백
+        
+        Returns:
+            에러 코드 (0: 성공)
+        """
+        return self.rotate_joint(
+            joint_index=joint_index,
+            delta_deg=delta_deg,
+            max_step_deg=9999.0,  # 제한 없음
+            vel=cfg.MOVEJ_VEL_J6,
+            reconnect_cb=reconnect_cb
+        )
