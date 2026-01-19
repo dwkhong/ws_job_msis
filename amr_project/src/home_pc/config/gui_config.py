@@ -38,4 +38,4 @@ POSES_FILE = "saved_poses.json"  # Pose 저장 파일
 # ============================================================
 # AMR 설정
 # ============================================================
-AMR_CONFIG_PATH = "amr_project/src/home_pc/amr/config.yaml"
+AMR_CONFIG_PATH = "/ws_job_msis/amr_project/src/home_pc/amr/config.yaml"
