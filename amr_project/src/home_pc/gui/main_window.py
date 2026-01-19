@@ -40,7 +40,7 @@ class RobotGUI:
         """
         self.root = root
         self.root.title("Fairino Robot Control")
-        self.root.geometry("900x800")
+        self.root.geometry("1200x800")  # 900 -> 1200
 
         # Controllers
         self.robot_connector = controllers["robot_connector"]
@@ -50,6 +50,7 @@ class RobotGUI:
         self.return_home = controllers.get("return_home")
         self.box_detector = controllers.get("box_detector")
         self.auto_pick_place = controllers.get("auto_pick_place")
+        self.safe_pick_place = controllers.get("safe_pick_place")  # Manual stacking
 
         # Pose manager
         self.pose_manager = PoseManager()
@@ -69,9 +70,9 @@ class RobotGUI:
             except Exception as e:
                 print(f"[AMR] Initialization failed: {e}")
 
-        # Left container (scrollable)
+        # Left container (scrollable) - 더 넓게
         left_container = ttk.Frame(self.root)
-        left_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        left_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 5))
 
         self.canvas = tk.Canvas(left_container)
         self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -294,10 +295,11 @@ class RobotGUI:
         ttk.Button(quick_frame, text="Quick Start", command=self.on_quick_start, width=18).pack(side=tk.LEFT, padx=10)
 
     def create_output_frame(self):
+        # 우측 프레임 - 고정 폭으로 설정
         frame = ttk.LabelFrame(self.root, text="Status Output", padding=10)
-        frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=5)
+        frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(5, 10), pady=5)
 
-        self.output_text = tk.Text(frame, height=20, width=60, font=("Courier", 9))
+        self.output_text = tk.Text(frame, height=45, width=45, font=("Courier", 8))
         self.output_text.pack(fill=tk.BOTH, expand=True)
 
         scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=self.output_text.yview)
@@ -440,8 +442,74 @@ class RobotGUI:
             messagebox.showerror("Error", f"Invalid parameters: {e}")
 
     def on_start_stacking(self):
-        messagebox.showinfo("Info", "Manual stacking is not implemented yet.")
-        self.log("Manual stacking not implemented.")
+        """Manual stacking using saved poses"""
+        if not self.safe_pick_place:
+            self.log("SafePickPlace not initialized")
+            messagebox.showerror("Error", "Manual stacking module not available")
+            return
+
+        table = self.table_var.get()
+        poses = self.pose_manager.get_table_poses(table)
+
+        pick_pose = poses.get("pick_pose")
+        place_pose = poses.get("place_pose")
+        safe_pick = poses.get("safe_pick")
+        safe_place = poses.get("safe_place")
+
+        if not all([pick_pose, place_pose, safe_pick, safe_place]):
+            messagebox.showerror("Error", f"Table {table} poses not saved.\nPlease save all 4 poses first.")
+            self.log(f"Table {table} poses incomplete")
+            return
+
+        num_boxes = int(self.num_boxes_var.get())
+        box_height = float(self.box_height_var.get())
+        vel_normal = float(self.vel_normal_var.get())
+        vel_slow = float(self.vel_slow_var.get())
+
+        answer = messagebox.askyesno(
+            "Manual Stacking",
+            f"Start manual stacking?\n\n"
+            f"Table: {table}\n"
+            f"Boxes: {num_boxes}\n"
+            f"Height: {box_height} mm\n"
+            f"Speed: {vel_normal}/{vel_slow}"
+        )
+        if not answer:
+            return
+
+        def stacking_thread():
+            self.log("=" * 50)
+            self.log(f"Start Manual Stacking (Table {table})")
+            self.log("=" * 50)
+
+            try:
+                result = self.safe_pick_place.run_stacking_sequence(
+                    pick_pose=pick_pose,
+                    place_pose=place_pose,
+                    safe_pick=safe_pick,
+                    safe_place=safe_place,
+                    num_boxes=num_boxes,
+                    box_height=box_height,
+                    vel_normal=vel_normal,
+                    vel_slow=vel_slow,
+                    status_callback=self.log
+                )
+            except Exception as e:
+                result = {"ok": False, "boxes_moved": 0}
+                self.log(f"Error: {e}")
+
+            if result.get("ok"):
+                moved = result.get("boxes_moved", 0)
+                total = result.get("total_requested", num_boxes)
+                self.log("=" * 50)
+                self.log(f"Manual stacking done ({moved}/{total} boxes)")
+                self.log("=" * 50)
+                self.ui(messagebox.showinfo, "Success", f"Stacking done.\nMoved: {moved}/{total}")
+            else:
+                self.log("Manual stacking failed")
+                self.ui(messagebox.showerror, "Error", "Manual stacking failed")
+
+        threading.Thread(target=stacking_thread, daemon=True).start()
 
     # -------------------------
     # Vision control
@@ -668,7 +736,6 @@ class RobotGUI:
     # -------------------------
     def on_close(self):
         """Close GUI and stop everything safely."""
-        # This handler runs on the main thread (safe to show messagebox)
         answer = messagebox.askyesno("Exit", "Exit the GUI and stop modules?")
         if not answer:
             return
@@ -691,7 +758,7 @@ class RobotGUI:
             except Exception as e:
                 self.log(f"[SYS] AMR stop error: {e}")
 
-        # Stop any auto controller if it exposes a stop/cancel API (best-effort)
+        # Stop auto controllers
         if self.auto_pick_place:
             for name in ["stop", "cancel", "request_stop", "shutdown"]:
                 if hasattr(self.auto_pick_place, name) and callable(getattr(self.auto_pick_place, name)):
@@ -701,6 +768,13 @@ class RobotGUI:
                     except Exception as e:
                         self.log(f"[SYS] AutoPickPlace {name}() error: {e}")
                     break
+
+        if self.safe_pick_place:
+            try:
+                self.safe_pick_place.request_stop()
+                self.log("[SYS] SafePickPlace stopped")
+            except Exception as e:
+                self.log(f"[SYS] SafePickPlace stop error: {e}")
 
         # Disconnect robot
         try:

@@ -1,23 +1,22 @@
 # demo_gui.py
 """
-GUI 데모 - 외형만 보기 (로봇/AMR 연결 없음)
+GUI Demo - UI layout test (no robot/AMR connection)
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
 
 
 class DemoGUI:
-    """GUI 데모"""
+    """GUI Demo"""
     
     def __init__(self, root):
         self.root = root
         self.root.title("Fairino Robot Control - DEMO")
-        self.root.geometry("900x800")
+        self.root.geometry("1200x800")  # 900 -> 1200으로 증가
         
-        # 좌측 프레임 (스크롤 가능)
-        # Canvas + Scrollbar 구조
+        # Left container (scrollable) - 더 넓게
         left_container = ttk.Frame(self.root)
-        left_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        left_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 5))
         
         # Canvas
         self.canvas = tk.Canvas(left_container)
@@ -29,55 +28,55 @@ class DemoGUI:
         
         self.canvas.configure(yscrollcommand=scrollbar.set)
         
-        # 실제 컨텐츠가 들어갈 프레임
+        # Content frame
         self.left_frame = ttk.Frame(self.canvas)
         self.canvas_window = self.canvas.create_window((0, 0), window=self.left_frame, anchor=tk.NW)
         
-        # 스크롤 영역 업데이트
+        # Scroll region update
         self.left_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         
-        # 마우스 휠 스크롤
+        # Mouse wheel scroll
         self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
         
+        # UI creation
+        self.create_ui()
+    
+    def create_ui(self):
         # 1. Connection
         self.create_connection_frame()
         
         # 2. Controls
         self.create_control_frame()
         
-        # 3. Vision Control (NEW!)
+        # 3. Vision Control
         self.create_vision_frame()
         
         # 4. Joint Movement
         self.create_joint_frame()
         
-        # 4. Gripper
+        # 5. Gripper
         self.create_gripper_frame()
         
-        # 5. Current Pose
+        # 6. Current Pose
         self.create_pose_frame()
         
-        # 6. Pose Management
+        # 7. Pose Management
         self.create_save_frame()
         
-        # 7. Stacking Parameters
+        # 8. Stacking Parameters
         self.create_param_frame()
         
-        # 8. Stacking Control (Original)
+        # 9. Stacking Control (Manual)
         self.create_run_frame()
         
-        # 9. Auto Control (12번, 13번)
+        # 10. Auto Control (12, 13)
         self.create_auto_control_frame()
         
-        # 우측 프레임 (Output)
+        # Right frame (Output)
         self.create_output_frame()
     
-    def _on_mousewheel(self, event):
-        """마우스 휠 스크롤"""
-        self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-    
     def create_connection_frame(self):
-        """연결 프레임"""
+        """Connection frame"""
         frame = ttk.LabelFrame(self.left_frame, text="Robot Connection", padding=10)
         frame.pack(fill=tk.X, padx=10, pady=5)
         
@@ -93,57 +92,59 @@ class DemoGUI:
         self.status_label.grid(row=0, column=4, padx=10)
     
     def create_control_frame(self):
-        """제어 프레임"""
+        """Control frame"""
         frame = ttk.LabelFrame(self.left_frame, text="Robot Controls", padding=10)
         frame.pack(fill=tk.X, padx=10, pady=5)
         
-        ttk.Button(frame, text="STOP", command=lambda: self.log("🛑 STOP"), width=15).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame, text="PAUSE", command=lambda: self.log("⏸ PAUSE"), width=15).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame, text="RESUME", command=lambda: self.log("▶ RESUME"), width=15).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame, text="GO HOME", command=lambda: self.log("🏠 GO HOME"), width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame, text="STOP", command=lambda: self.log("STOP"), width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame, text="PAUSE", command=lambda: self.log("PAUSE"), width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame, text="RESUME", command=lambda: self.log("RESUME"), width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame, text="GO HOME", command=lambda: self.log("GO HOME"), width=15).pack(side=tk.LEFT, padx=5)
         
-        # AMR 버튼
-        ttk.Button(frame, text="AMR table1", command=lambda: self.log("AMR → Table1"), width=10).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame, text="AMR table2", command=lambda: self.log("AMR → Table2"), width=10).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame, text="AMR stop", command=lambda: self.log("AMR STOP"), width=10).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame, text="EXIT", command=self.root.quit, width=10).pack(side=tk.RIGHT, padx=5)
+        
+        # AMR buttons
+        ttk.Button(frame, text="AMR Table1", command=lambda: self.log("AMR -> Table1"), width=12).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame, text="AMR Table2", command=lambda: self.log("AMR -> Table2"), width=12).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame, text="AMR Stop", command=lambda: self.log("AMR STOP"), width=12).pack(side=tk.LEFT, padx=5)
     
     def create_vision_frame(self):
-        """Vision 제어 프레임 (NEW!)"""
+        """Vision control frame"""
         frame = ttk.LabelFrame(self.left_frame, text="Vision Control (Camera + YOLO)", padding=10)
         frame.pack(fill=tk.X, padx=10, pady=5)
         
-        # Vision On/Off 버튼
-        self.btn_vision_on = ttk.Button(frame, text="📷 Vision ON", 
+        # Vision On/Off buttons
+        self.btn_vision_on = ttk.Button(frame, text="Vision ON", 
                                         command=lambda: self.toggle_vision(True), width=15)
         self.btn_vision_on.pack(side=tk.LEFT, padx=5)
         
-        self.btn_vision_off = ttk.Button(frame, text="📷 Vision OFF", 
+        self.btn_vision_off = ttk.Button(frame, text="Vision OFF", 
                                          command=lambda: self.toggle_vision(False), 
                                          width=15, state=tk.DISABLED)
         self.btn_vision_off.pack(side=tk.LEFT, padx=5)
         
-        # Vision 상태 표시
+        # Vision status
         self.vision_status_label = ttk.Label(frame, text="Status: OFF", foreground="red", font=("Arial", 10, "bold"))
         self.vision_status_label.pack(side=tk.LEFT, padx=10)
     
     def toggle_vision(self, is_on):
-        """Vision ON/OFF 토글"""
+        """Vision ON/OFF toggle"""
         if is_on:
             self.vision_status_label.config(text="Status: ON", foreground="green")
             self.btn_vision_on.config(state=tk.DISABLED)
             self.btn_vision_off.config(state=tk.NORMAL)
-            self.log("✓ Vision started")
+            self.log("Vision started")
             self.log("  - Camera: RealSense D405")
             self.log("  - YOLO: OBB Detection ready")
         else:
             self.vision_status_label.config(text="Status: OFF", foreground="red")
             self.btn_vision_on.config(state=tk.NORMAL)
             self.btn_vision_off.config(state=tk.DISABLED)
-            self.log("✓ Vision stopped")
+            self.log("Vision stopped")
     
     def create_joint_frame(self):
-        """Joint 이동 프레임"""
-        frame = ttk.LabelFrame(self.left_frame, text="Joint Movement (±5°)", padding=10)
+        """Joint movement frame"""
+        frame = ttk.LabelFrame(self.left_frame, text="Joint Movement (+/- 5 deg)", padding=10)
         frame.pack(fill=tk.X, padx=10, pady=5)
         
         for i in range(6):
@@ -151,21 +152,21 @@ class DemoGUI:
             sub_frame.pack(fill=tk.X, padx=5, pady=3)
             
             ttk.Label(sub_frame, text=f"Joint {i+1}:", width=10).pack(side=tk.LEFT)
-            ttk.Button(sub_frame, text="←", width=3, 
-                      command=lambda j=i: self.log(f"J{j+1} ← -5°")).pack(side=tk.LEFT, padx=2)
-            ttk.Button(sub_frame, text="→", width=3, 
-                      command=lambda j=i: self.log(f"J{j+1} → +5°")).pack(side=tk.LEFT, padx=2)
+            ttk.Button(sub_frame, text="<", width=3, 
+                      command=lambda j=i: self.log(f"J{j+1} <- -5 deg")).pack(side=tk.LEFT, padx=2)
+            ttk.Button(sub_frame, text=">", width=3, 
+                      command=lambda j=i: self.log(f"J{j+1} -> +5 deg")).pack(side=tk.LEFT, padx=2)
     
     def create_gripper_frame(self):
-        """그리퍼 프레임"""
+        """Gripper frame"""
         frame = ttk.LabelFrame(self.left_frame, text="Gripper Control", padding=10)
         frame.pack(fill=tk.X, padx=10, pady=5)
         
-        ttk.Button(frame, text="Open Gripper", command=lambda: self.log("✋ Gripper OPEN"), width=20).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame, text="Close Gripper", command=lambda: self.log("✊ Gripper CLOSE"), width=20).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame, text="Open", command=lambda: self.log("Gripper OPEN"), width=20).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame, text="Close", command=lambda: self.log("Gripper CLOSE"), width=20).pack(side=tk.LEFT, padx=5)
     
     def create_pose_frame(self):
-        """현재 Pose 프레임"""
+        """Current Pose frame"""
         frame = ttk.LabelFrame(self.left_frame, text="Current Pose (Cartesian)", padding=10)
         frame.pack(fill=tk.X, padx=10, pady=5)
         
@@ -176,21 +177,21 @@ class DemoGUI:
         btn_frame.pack(pady=5)
         
         ttk.Button(btn_frame, text="Refresh Pose", command=lambda: self.log("Refresh Pose (demo)")).pack(side=tk.LEFT, padx=3)
-        ttk.Button(btn_frame, text="💾 Save as Home", command=lambda: self.log("✓ Home position saved")).pack(side=tk.LEFT, padx=3)
+        ttk.Button(btn_frame, text="Save as Home", command=lambda: self.log("Home position saved")).pack(side=tk.LEFT, padx=3)
     
     def create_save_frame(self):
-        """Pose 저장 프레임"""
+        """Pose management frame"""
         frame = ttk.LabelFrame(self.left_frame, text="Pose Management", padding=10)
         frame.pack(fill=tk.X, padx=10, pady=5)
         
-        ttk.Button(frame, text="Save Pick Pose", command=lambda: self.log("💾 Pick Pose saved"), width=18).pack(side=tk.LEFT, padx=3)
-        ttk.Button(frame, text="Save Safe Pick", command=lambda: self.log("💾 Safe Pick saved"), width=18).pack(side=tk.LEFT, padx=3)
-        ttk.Button(frame, text="Save Place Pose", command=lambda: self.log("💾 Place Pose saved"), width=18).pack(side=tk.LEFT, padx=3)
-        ttk.Button(frame, text="Save Safe Place", command=lambda: self.log("💾 Safe Place saved"), width=18).pack(side=tk.LEFT, padx=3)
-        ttk.Button(frame, text="View Saved Poses", command=lambda: self.log("📋 View Poses"), width=18).pack(side=tk.LEFT, padx=3)
+        ttk.Button(frame, text="Save Pick", command=lambda: self.log("Pick Pose saved"), width=12).pack(side=tk.LEFT, padx=3)
+        ttk.Button(frame, text="Save Safe Pick", command=lambda: self.log("Safe Pick saved"), width=12).pack(side=tk.LEFT, padx=3)
+        ttk.Button(frame, text="Save Place", command=lambda: self.log("Place Pose saved"), width=12).pack(side=tk.LEFT, padx=3)
+        ttk.Button(frame, text="Save Safe Place", command=lambda: self.log("Safe Place saved"), width=12).pack(side=tk.LEFT, padx=3)
+        ttk.Button(frame, text="View Poses", command=lambda: self.log("View Poses"), width=12).pack(side=tk.LEFT, padx=3)
     
     def create_param_frame(self):
-        """스택 파라미터 프레임"""
+        """Stacking parameters frame"""
         frame = ttk.LabelFrame(self.left_frame, text="Stacking Parameters", padding=10)
         frame.pack(fill=tk.X, padx=10, pady=5)
         
@@ -218,125 +219,157 @@ class DemoGUI:
         self.vel_slow_var = tk.DoubleVar(value=30.0)
         ttk.Entry(frame, textvariable=self.vel_slow_var, width=10).grid(row=1, column=3, sticky=tk.W, padx=5)
         
-        ttk.Button(frame, text="Save Parameters", command=lambda: self.log("✓ Parameters saved")).grid(row=1, column=4, columnspan=2, sticky=tk.W, padx=5)
+        ttk.Button(frame, text="Save Parameters", command=lambda: self.log("Parameters saved")).grid(row=1, column=4, columnspan=2, sticky=tk.W, padx=5)
     
     def create_run_frame(self):
-        """스택 실행 프레임 (Original)"""
-        frame = ttk.LabelFrame(self.left_frame, text="Stacking Control (Original)", padding=10)
+        """Stacking control frame (Manual)"""
+        frame = ttk.LabelFrame(self.left_frame, text="Stacking Control (Manual)", padding=10)
         frame.pack(fill=tk.X, padx=10, pady=5)
         
         ttk.Button(frame, text="Start Stacking (Manual)", 
-                  command=lambda: self.log("🚀 Start Stacking (original - demo)"), 
+                  command=self.on_start_stacking, 
                   width=25).pack(side=tk.LEFT, padx=5)
     
     def create_auto_control_frame(self):
-        """자동 제어 프레임 (12번, 13번)"""
-        frame = ttk.LabelFrame(self.left_frame, text="🤖 Auto Pick & Place", padding=10)
+        """Auto control frame (12, 13)"""
+        frame = ttk.LabelFrame(self.left_frame, text="Auto Pick and Place", padding=10)
         frame.pack(fill=tk.X, padx=10, pady=5)
         
-        # 스택 카운터 표시 및 리셋
+        # Stack counter display and reset
         counter_frame = ttk.Frame(frame)
         counter_frame.pack(fill=tk.X, pady=5)
         
-        ttk.Label(counter_frame, text="📦 Stack Counter:", font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=5)
+        ttk.Label(counter_frame, text="Stack Counter:", font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=5)
         self.stack_counter_label = ttk.Label(counter_frame, text="0", 
                                              font=("Arial", 12, "bold"), foreground="blue")
         self.stack_counter_label.pack(side=tk.LEFT, padx=5)
         
-        ttk.Button(counter_frame, text="🔄 Reset Counter", 
+        ttk.Button(counter_frame, text="Reset Counter", 
                   command=lambda: self.reset_counter(), width=15).pack(side=tk.LEFT, padx=15)
         
-        # 구분선
+        # Separator
         ttk.Separator(frame, orient='horizontal').pack(fill=tk.X, pady=10)
         
-        # 12번 - Custom Auto Loop
+        # 12 - Custom Auto Loop
         loop_frame = ttk.Frame(frame)
         loop_frame.pack(fill=tk.X, pady=5)
         
-        ttk.Label(loop_frame, text="12번 Auto Loop:", font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=5)
-        ttk.Label(loop_frame, text="박스 개수:").pack(side=tk.LEFT, padx=5)
+        ttk.Label(loop_frame, text="12 Auto Loop:", font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=5)
+        ttk.Label(loop_frame, text="boxes:").pack(side=tk.LEFT, padx=5)
         self.auto_boxes_var = tk.IntVar(value=4)
         ttk.Spinbox(loop_frame, from_=1, to=20, textvariable=self.auto_boxes_var, 
                    width=10).pack(side=tk.LEFT, padx=5)
-        ttk.Label(loop_frame, text="개").pack(side=tk.LEFT, padx=5)
-        ttk.Button(loop_frame, text="▶ Start Auto Loop", 
+        ttk.Button(loop_frame, text="Start Auto Loop", 
                   command=self.on_auto_loop, width=18).pack(side=tk.LEFT, padx=10)
         
-        # 13번 - Quick Start
+        # 13 - Quick Start
         quick_frame = ttk.Frame(frame)
         quick_frame.pack(fill=tk.X, pady=5)
         
-        ttk.Label(quick_frame, text="13번 Quick Start:", font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=5)
-        ttk.Label(quick_frame, text="자동 초기화 + 4개 박스", foreground="blue").pack(side=tk.LEFT, padx=5)
-        ttk.Button(quick_frame, text="🚀 Quick Start", 
+        ttk.Label(quick_frame, text="13 Quick Start:", font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=5)
+        ttk.Label(quick_frame, text="auto reset + 4 boxes").pack(side=tk.LEFT, padx=5)
+        ttk.Button(quick_frame, text="Quick Start", 
                   command=self.on_quick_start, width=18).pack(side=tk.LEFT, padx=10)
     
     def reset_counter(self):
-        """카운터 리셋 데모"""
+        """Counter reset demo"""
         self.stack_counter_label.config(text="0")
-        self.log("🔄 Stack counter reset to 0")
+        self.log("Stack counter reset to 0")
+    
+    def on_start_stacking(self):
+        """Manual Stacking demo"""
+        table = self.table_var.get()
+        num = self.num_boxes_var.get()
+        height = self.box_height_var.get()
+        vel_n = self.vel_normal_var.get()
+        vel_s = self.vel_slow_var.get()
+        
+        self.log("=" * 50)
+        self.log(f"Start Manual Stacking - DEMO (Table {table})")
+        self.log("=" * 50)
+        self.log(f"Boxes: {num}")
+        self.log(f"Height: {height} mm")
+        self.log(f"Speed: {vel_n}/{vel_s}")
+        self.log("")
+        self.log("1. Check saved poses...")
+        self.log("2. Moving to safe pick position...")
+        for i in range(num):
+            self.log(f"   [Box {i+1}/{num}]")
+            self.log(f"     Pick Z: {373.7 - i*height:.3f}")
+            self.log(f"     Place Z: {148.68 + i*height:.3f}")
+            self.log(f"     Pick -> Place")
+        self.log("")
+        self.log(f"Manual stacking completed! ({num}/{num} boxes)")
+        self.log("=" * 50)
     
     def on_quick_start(self):
-        """Quick Start 데모 (13번)"""
+        """Quick Start demo (13)"""
         self.log("=" * 50)
-        self.log("🚀 Quick Start (13번) - DEMO")
+        self.log("Quick Start (13) - DEMO")
         self.log("=" * 50)
-        self.log("1. 로봇 연결 체크...")
-        self.log("2. Vision 시작 체크...")
-        self.log("3. Home 저장...")
-        self.log("4. 스택 카운터 리셋...")
-        self.log("5. 4개 박스 자동 이동 중...")
+        self.log("1. Checking robot connection...")
+        self.log("2. Checking vision...")
+        self.log("3. Saving home position...")
+        self.log("4. Resetting stack counter...")
+        self.log("5. Auto moving 4 boxes...")
         self.log("")
         for i in range(4):
-            self.log(f"   [Box {i+1}/4] Pick → Place")
+            self.log(f"   [Box {i+1}/4] Pick -> Place")
         self.log("")
-        self.log("✅ Quick Start 완료! (총 4개 이동)")
+        self.log("Quick Start completed! (Total: 4 boxes)")
         self.log("=" * 50)
         self.stack_counter_label.config(text="4")
     
     def on_auto_loop(self):
-        """Auto Loop 데모 (12번)"""
+        """Auto Loop demo (12)"""
         num = self.auto_boxes_var.get()
         self.log("=" * 50)
-        self.log(f"▶ Auto Loop (12번) - DEMO ({num}개)")
+        self.log(f"Auto Loop (12) - DEMO ({num} boxes)")
         self.log("=" * 50)
-        self.log("1. 로봇 연결 체크...")
-        self.log("2. Vision 체크...")
+        self.log("1. Checking robot connection...")
+        self.log("2. Checking vision...")
         for i in range(num):
-            self.log(f"   [Box {i+1}/{num}] Pick → Place")
+            self.log(f"   [Box {i+1}/{num}] Pick -> Place")
         self.log("")
-        self.log(f"✅ Auto Loop 완료! (총 {num}개 이동)")
+        self.log(f"Auto Loop completed! (Total: {num} boxes)")
         self.log("=" * 50)
         self.stack_counter_label.config(text=str(num))
     
     def create_output_frame(self):
-        """출력 프레임"""
+        """Output frame"""
+        # 우측 프레임 - 고정 폭으로 설정
         frame = ttk.LabelFrame(self.root, text="Status Output", padding=10)
-        frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=5)
+        frame.pack(side=tk.RIGHT, fill=tk.Y, padx=(5, 10), pady=5)
         
-        self.output_text = tk.Text(frame, height=20, width=60, font=("Courier", 9))
+        self.output_text = tk.Text(frame, height=45, width=45, font=("Courier", 8))
         self.output_text.pack(fill=tk.BOTH, expand=True)
         
         scrollbar = ttk.Scrollbar(frame, orient=tk.VERTICAL, command=self.output_text.yview)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.output_text.config(yscrollcommand=scrollbar.set)
         
-        # 초기 메시지
+        # Initial message
         self.log("=" * 50)
         self.log("GUI DEMO MODE - No robot connection")
         self.log("=" * 50)
-        self.log("✨ NEW FEATURES:")
-        self.log("  • Vision Control (Camera + YOLO)")
-        self.log("  • Quick Start (13번 - Auto 4 boxes)")
+        self.log("FEATURES:")
+        self.log("  - Vision Control (Camera + YOLO)")
+        self.log("  - Manual Stacking (Safe Waypoint)")
+        self.log("  - 12 Auto Loop (N boxes)")
+        self.log("  - 13 Quick Start (4 boxes)")
         self.log("")
         self.log("Click any button to test GUI layout")
         self.log("")
     
     def log(self, message: str):
-        """로그 출력"""
+        """Log output"""
         self.output_text.insert(tk.END, f"{message}\n")
         self.output_text.see(tk.END)
         self.root.update()
+    
+    def _on_mousewheel(self, event):
+        """Mouse wheel scroll"""
+        self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
 
 
 if __name__ == "__main__":

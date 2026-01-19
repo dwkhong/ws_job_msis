@@ -11,6 +11,7 @@ from .gripper_controller import GripperController
 from .pick_place import PickPlace
 from .return_home import ReturnHome
 from .auto_pick_place import AutoPickPlace
+from .pick_and_place_fawad import SafePickPlace
 
 __all__ = [
     'RobotConnector',
@@ -21,5 +22,6 @@ __all__ = [
     'GripperController',
     'PickPlace',
     'ReturnHome',
-    'AutoPickPlace'
+    'AutoPickPlace',
+    'SafePickPlace'
 ]
