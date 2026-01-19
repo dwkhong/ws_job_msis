@@ -340,15 +340,13 @@ class RobotGUI:
 
     def on_go_home(self):
         def home_thread():
-            if self.return_home:
-                result = self.return_home.cmd_home_only()
-                if result.get("ok"):
-                    self.log("Moved to home")
-                else:
-                    self.log("Failed to move home")
+            # GO HOME = CAM_POSE로 이동 (비전 확인용)
+            self.log("Moving to CAM_POSE (vision position)...")
+            err = self.robot_motion.move_cart(gui_config.CAM_POSE)
+            if err == 0:
+                self.log("Arrived at CAM_POSE")
             else:
-                self.robot_motion.move_cart(gui_config.HOME_POSE)
-                self.log("Moved to home")
+                self.log("Failed to move to CAM_POSE")
         threading.Thread(target=home_thread, daemon=True).start()
 
     def on_joint_move(self, joint_index: int, direction: int):

@@ -1,4 +1,4 @@
-# robot/pick_and_place_fawad.py
+# robot/safe_pick_place.py
 """
 Safe Waypoint Pick & Place
 - Original GUI stacking logic (safe pick → pick → safe pick → safe place → place → safe place)
@@ -90,7 +90,7 @@ class SafePickPlace:
         # 1. Move to safe pick position
         if status_callback:
             status_callback("Moving to safe pick position...")
-        err = self.robot_motion.move_cart(safe_pick, vel=vel_normal)
+        err = self.robot_motion.move_cart(safe_pick, vel_list=[vel_normal])
         if err != 0:
             if status_callback:
                 status_callback("Failed to move to safe pick")
@@ -102,7 +102,7 @@ class SafePickPlace:
         # 2. Approach and pick (slow speed)
         if status_callback:
             status_callback("Approaching pick position...")
-        err = self.robot_motion.move_cart(target_pick, vel=vel_slow)
+        err = self.robot_motion.move_cart(target_pick, vel_list=[vel_slow])
         if err != 0:
             if status_callback:
                 status_callback("Failed to approach pick")
@@ -123,7 +123,7 @@ class SafePickPlace:
         # 4. Return to safe pick position
         if status_callback:
             status_callback("Returning to safe pick...")
-        err = self.robot_motion.move_cart(safe_pick, vel=vel_normal)
+        err = self.robot_motion.move_cart(safe_pick, vel_list=[vel_normal])
         if err != 0:
             if status_callback:
                 status_callback("Failed to return to safe pick")
@@ -135,7 +135,7 @@ class SafePickPlace:
         # 5. Move to safe place position
         if status_callback:
             status_callback("Moving to safe place position...")
-        err = self.robot_motion.move_cart(safe_place, vel=vel_normal)
+        err = self.robot_motion.move_cart(safe_place, vel_list=[vel_normal])
         if err != 0:
             if status_callback:
                 status_callback("Failed to move to safe place")
@@ -147,7 +147,7 @@ class SafePickPlace:
         # 6. Approach and place
         if status_callback:
             status_callback("Approaching place position...")
-        err = self.robot_motion.move_cart(target_place, vel=vel_normal)
+        err = self.robot_motion.move_cart(target_place, vel_list=[vel_normal])
         if err != 0:
             if status_callback:
                 status_callback("Failed to approach place")
@@ -168,7 +168,7 @@ class SafePickPlace:
         # 8. Return to safe place position
         if status_callback:
             status_callback("Returning to safe place...")
-        err = self.robot_motion.move_cart(safe_place, vel=vel_normal)
+        err = self.robot_motion.move_cart(safe_place, vel_list=[vel_normal])
         if err != 0:
             if status_callback:
                 status_callback("Failed to return to safe place")

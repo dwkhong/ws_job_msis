@@ -242,12 +242,13 @@ class AutoPickPlace:
         print("\n[13] Step 3: 자동으로 4개 박스 이동 시작")
         print("=" * 60)
         
-        # 스택 카운터 자동 리셋 (Quick Start는 항상 리셋)
+        # 스택 카운터 리셋 여부 확인
         if self._stack_counter > 0:
             print(f"[13] 현재 스택 카운터: {self._stack_counter}")
-            print("[13] Quick Start이므로 스택 카운터를 자동으로 0으로 리셋합니다.")
-            self._stack_counter = 0
-            print("[13] 스택 카운터 리셋 완료")
+            reset = input("스택 카운터를 0으로 리셋할까요? (y/n) > ").strip().lower()
+            if reset == 'y':
+                self._stack_counter = 0
+                print("[13] 스택 카운터 리셋 완료")
         
         # Home joint 가져오기
         home_joint6 = self.get_home_joint6(reconnect_cb=reconnect_cb)
@@ -368,7 +369,7 @@ class AutoPickPlace:
     # -------------------------
     # 명령 (12번 기능)
     # -------------------------
-    def cmd12_auto_loop(self, num_cycles: int = None, reconnect_cb: Optional[Callable] = None) -> Dict[str, Any]:
+    def cmd12_auto_loop(self, reconnect_cb: Optional[Callable] = None) -> Dict[str, Any]:
         """
         12번: 자동 Pick & Place 루프
         N번 반복: 측정 → 계산 → IK → Pick → Home → Place
@@ -379,7 +380,6 @@ class AutoPickPlace:
         - 종료/에러/리턴 시 반드시 restart 허용으로 복구
         
         Args:
-            num_cycles: 반복 횟수 (None이면 입력 받음)
             reconnect_cb: 재연결 콜백
         
         Returns:
@@ -393,24 +393,18 @@ class AutoPickPlace:
             print("[12] 카메라가 꺼져있습니다. (1번으로 ON)")
             return {"ok": False, "msg": "camera not running"}
         
-        # 반복 횟수 (GUI에서 전달 또는 CLI 입력)
-        if num_cycles is None:
-            raw = input("박스 몇 개 옮길까요? (예: 4, b=back) > ").strip().lower()
-            if raw in ("b", "back", "q", "quit"):
-                return {"ok": True, "msg": "cancel"}
-            
-            try:
-                n = int(raw)
-                if n <= 0:
-                    raise ValueError()
-            except Exception:
-                print("[12] 숫자 입력이 아닙니다.")
-                return {"ok": False, "msg": "invalid count"}
-        else:
-            n = num_cycles
+        # 반복 횟수 입력
+        raw = input("박스 몇 개 옮길까요? (예: 4, b=back) > ").strip().lower()
+        if raw in ("b", "back", "q", "quit"):
+            return {"ok": True, "msg": "cancel"}
+        
+        try:
+            n = int(raw)
             if n <= 0:
-                print("[12] num_cycles는 1 이상이어야 합니다.")
-                return {"ok": False, "msg": "invalid count"}
+                raise ValueError()
+        except Exception:
+            print("[12] 숫자 입력이 아닙니다.")
+            return {"ok": False, "msg": "invalid count"}
         
         # Home joint 가져오기
         home_joint6 = self.get_home_joint6(reconnect_cb=reconnect_cb)
@@ -418,8 +412,13 @@ class AutoPickPlace:
             print("[12] home_joint6를 못 찾았음. 2번(홈 저장)부터 하세요.")
             return {"ok": False, "msg": "home_joint6 missing"}
         
-        # 스택 카운터는 GUI에서 "Reset Counter" 버튼으로 제어
-        # 12번은 리셋하지 않고 계속 누적
+        # 스택 카운터 리셋 여부 확인
+        if self._stack_counter > 0:
+            print(f"[12] 현재 스택 카운터: {self._stack_counter}")
+            reset = input("스택 카운터를 0으로 리셋할까요? (y/n) > ").strip().lower()
+            if reset == 'y':
+                self._stack_counter = 0
+                print("[12] 스택 카운터 리셋 완료")
         
         print(f"\n[12] Auto Pick&Place start: {n} cycles (stack_counter={self._stack_counter})")
         
@@ -438,12 +437,11 @@ class AutoPickPlace:
                     print("[12] HOME(prepare) FAIL:", out_home0.get("msg", ""))
                     return {"ok": False, "msg": "home prepare fail", "cycle": i+1}
                 
-                # HOME 후 캐시 갱신 (cmd를 사용하여 캐시 저장)
-                print(f"[12] Cycle {i+1}: 현재 위치 읽기...")
-                result = self.robot_state.cmd_read_pose_joint(reconnect_cb=reconnect_cb)
-                if result is None:
-                    print(f"[12] Cycle {i+1}: 위치 읽기 실패")
-                    return {"ok": False, "msg": "read pose fail", "cycle": i+1}
+                # HOME 후 pose/joint 캐시 갱신
+                try:
+                    self.robot_state.read_pose_joint(reconnect_cb=reconnect_cb)
+                except Exception:
+                    pass
                 
                 # 3) Measure (측정 중에는 restart 허용)
                 print("[12] Step3: measure_avg")

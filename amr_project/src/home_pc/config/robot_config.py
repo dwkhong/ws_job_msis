@@ -12,9 +12,9 @@ RPC_RETRY_SLEEP_SEC = 0.25       # 재시도 간 대기 시간 (초)
 # ============================================================
 # Camera -> Gripper Offset (mm)
 # ============================================================
-OFF_X_MM = -20.0
+OFF_X_MM = -10.0
 OFF_Y_MM = -70.0
-OFF_Z_MM = -175.0
+OFF_Z_MM = -168.0
 
 PIVOT_LENGTH = 175.0
 
@@ -91,7 +91,7 @@ MOVE_CART_VEL_FALLBACKS = [15.0, 8.0, 3.0]
 MOVE_CART_VEL_LIST = [MOVE_CART_VEL_DEFAULT] + MOVE_CART_VEL_FALLBACKS
 
 MOVE_CART_ACC = 50.0                  # 가속도
-MOVE_CART_OVL = 20.0                  # override(%)
+MOVE_CART_OVL = 60.0                 # override(%) - 20 → 100으로 증가
 MOVE_CART_BLENDT = -1.0               # blending time
 MOVE_CART_EX = -1                     # 확장 옵션
 
@@ -100,13 +100,6 @@ MOVEJ_BLENDT_RETURN = -1.0
 
 MOVEJ_VEL_WP11 = 90.0
 MOVEJ_BLENDT_WP11 = -1.0
-
-# ============================================================
-# GUI 전용 속도 설정
-# ============================================================
-GUI_VEL_NORMAL = 30.0   # GUI 일반 이동 속도
-GUI_VEL_SLOW = 30.0     # GUI 정밀 접근 속도
-GUI_BLENDT = 100.0      # GUI blending time
 
 # ============================================================
 # GRIPPER CONFIG (그리퍼 설정)
@@ -132,8 +125,3 @@ WP11_DROP_BASE_POSE = [94.070, -407.414, 247.161, -178.769, -0.710, 90.880]
 
 STACK_Z_STEP_MM = 58.0
 STACK_Z_MAX_MM = 600.0  # None이면 제한 없음
-
-
-
-
-
