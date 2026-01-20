@@ -30,8 +30,8 @@ TIMEOUT_SEC = 25.0  # 측정 타임아웃
 # Depth ROI (meters)
 # ============================================================
 ROI_MARGIN_PX = 6.0     # ROI 마진 (픽셀)
-MIN_ROI_PIXELS = 120    # 최소 ROI 픽셀 수
-MAD_THRES_M = 0.025     # MAD 임계값 (미터)
+MIN_ROI_PIXELS = 200    # 최소 ROI 픽셀 수 (120 → 200, 더 엄격)
+MAD_THRES_M = 0.015     # MAD 임계값 (미터) (0.020 → 0.015, 더 엄격)
 
 DEPTH_MIN_M = 0.15      # 최소 깊이
 DEPTH_MAX_M = 3.00      # 최대 깊이
@@ -48,7 +48,7 @@ MAX_CONSEC_SKIPS_RESET = 15
 # ============================================================
 # Preview / Overlay
 # ============================================================
-SHOW_PREVIEW = True
+SHOW_PREVIEW = False
 PREVIEW_WIN_NAME = "OBB + center"
 
 SHOW_OVERLAY = True
@@ -60,10 +60,18 @@ PRINT_SELECTED_EACH_ACCEPT = True
 # ============================================================
 # Stack Counting (Depth-based)
 # ============================================================
-ENABLE_STACK_COUNTING = True      # 스택 카운팅 활성화
-#BASELINE_DEPTH_MM = 560.0          # 빈 테이블 깊이 (mm) - 캘리브레이션 필요
-BASELINE_DEPTH_MM = 750.0          # 빈 테이블 깊이 (mm) - 캘리브레이션 필요
+ENABLE_STACK_COUNTING = False      # 스택 카운팅 활성화
+
+# 다중 테이블 높이 지원
+USE_MULTI_BASELINE = True          # 여러 테이블 높이 자동 감지
+BASELINE_DEPTH_LOW_MM = 560.0      # 낮은 테이블 깊이 (mm)
+BASELINE_DEPTH_HIGH_MM = 750.0     # 높은 테이블 깊이 (mm)
+BASELINE_THRESHOLD_MM = 650.0      # 구분 기준 (mm) - 이 값보다 크면 높은 테이블
+
+# 단일 테이블 (USE_MULTI_BASELINE=False 시 사용)
+BASELINE_DEPTH_MM = 560.0          # 단일 테이블 깊이 (mm)
+
 BOX_HEIGHT_MM = 58.0               # 박스 1개 높이 (mm)
 STACK_COUNT_MAX = 10               # 최대 스택 개수
-STACK_DEPTH_TOLERANCE_MM = 5.0    # 깊이 오차 허용 범위 (±mm)
+STACK_DEPTH_TOLERANCE_MM = 10.0    # 깊이 오차 허용 범위 (±mm)
 

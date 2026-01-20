@@ -489,10 +489,25 @@ class BoxDetector:
                                 # 각 OBB의 스택 개수 계산
                                 stack_for_this = 0
                                 if bool(getattr(cfg, "ENABLE_STACK_COUNTING", False)):
-                                    baseline = float(getattr(cfg, "BASELINE_DEPTH_MM", 500.0))
                                     box_h = float(getattr(cfg, "BOX_HEIGHT_MM", 58.0))
                                     depth_mm = float(z_m * 1000.0)
-                                    depth_diff = baseline - depth_mm  # 박스 쌓이면 Z 감소 (원래 공식)
+                                    
+                                    # 다중 테이블 높이 지원
+                                    if bool(getattr(cfg, "USE_MULTI_BASELINE", False)):
+                                        threshold = float(getattr(cfg, "BASELINE_THRESHOLD_MM", 650.0))
+                                        baseline_low = float(getattr(cfg, "BASELINE_DEPTH_LOW_MM", 560.0))
+                                        baseline_high = float(getattr(cfg, "BASELINE_DEPTH_HIGH_MM", 750.0))
+                                        
+                                        # 현재 Depth로 테이블 높이 자동 선택
+                                        if depth_mm > threshold:
+                                            baseline = baseline_high  # 높은 테이블
+                                        else:
+                                            baseline = baseline_low   # 낮은 테이블
+                                    else:
+                                        # 단일 테이블 모드
+                                        baseline = float(getattr(cfg, "BASELINE_DEPTH_MM", 560.0))
+                                    
+                                    depth_diff = baseline - depth_mm  # 박스 쌓이면 Z 감소
                                     
                                     # 허용 오차 범위 적용 (반 박스 높이)
                                     stack_for_this = int((depth_diff + box_h / 2) / box_h)
@@ -551,7 +566,7 @@ class BoxDetector:
                                 prev_valid = raw
                                 best_sample = raw
                                 
-                                # Preview 그리기
+                                # Preview 그리기 (Jump 통과한 박스만)
                                 if bool(getattr(cfg, "SHOW_PREVIEW", False)):
                                     # 박스와 중심점 그리기
                                     cv2.polylines(vis, [np.int32(best["poly"])], True, (0, 255, 0), 2)
@@ -570,33 +585,34 @@ class BoxDetector:
                                         (0, 255, 0),
                                         int(getattr(cfg, "OVERLAY_THICKNESS", 2)),
                                     )
-                                    
-                                    # OBB/Total은 오른쪽 위에 작게 표시
-                                    if bool(getattr(cfg, "ENABLE_STACK_COUNTING", False)):
-                                        count_txt = f"OBB: {len(candidates)}  Total: {total_boxes}"
-                                    else:
-                                        count_txt = f"Boxes: {len(candidates)}"
-                                    
-                                    # 텍스트 크기 계산
-                                    text_size = cv2.getTextSize(
-                                        count_txt, 
-                                        cv2.FONT_HERSHEY_SIMPLEX, 
-                                        0.5, 
-                                        1
-                                    )[0]
-                                    
-                                    # 오른쪽 위 좌표 (여백 10px)
-                                    text_x = STREAM_W - text_size[0] - 10
-                                    text_y = 20
-                                    
-                                    cv2.putText(
-                                        vis, count_txt,
-                                        (text_x, text_y),
-                                        cv2.FONT_HERSHEY_SIMPLEX,
-                                        0.5,
-                                        (0, 255, 255),  # 노란색
-                                        1,
-                                    )
+                            
+                            # OBB/Total은 Jump 여부와 관계없이 항상 표시
+                            if bool(getattr(cfg, "SHOW_PREVIEW", False)):
+                                if bool(getattr(cfg, "ENABLE_STACK_COUNTING", False)):
+                                    count_txt = f"OBB: {len(candidates)}  Total: {total_boxes}"
+                                else:
+                                    count_txt = f"Boxes: {len(candidates)}"
+                                
+                                # 텍스트 크기 계산
+                                text_size = cv2.getTextSize(
+                                    count_txt, 
+                                    cv2.FONT_HERSHEY_SIMPLEX, 
+                                    0.5, 
+                                    1
+                                )[0]
+                                
+                                # 오른쪽 위 좌표 (여백 10px)
+                                text_x = STREAM_W - text_size[0] - 10
+                                text_y = 20
+                                
+                                cv2.putText(
+                                    vis, count_txt,
+                                    (text_x, text_y),
+                                    cv2.FONT_HERSHEY_SIMPLEX,
+                                    0.5,
+                                    (0, 255, 255),  # 노란색
+                                    1,
+                                )
                         else:
                             # 박스가 없으면 0으로 설정
                             with self._lock:
