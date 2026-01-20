@@ -494,15 +494,59 @@ class BoxDetector:
                                     
                                     # 다중 테이블 높이 지원
                                     if bool(getattr(cfg, "USE_MULTI_BASELINE", False)):
-                                        threshold = float(getattr(cfg, "BASELINE_THRESHOLD_MM", 650.0))
                                         baseline_low = float(getattr(cfg, "BASELINE_DEPTH_LOW_MM", 560.0))
                                         baseline_high = float(getattr(cfg, "BASELINE_DEPTH_HIGH_MM", 750.0))
                                         
-                                        # 현재 Depth로 테이블 높이 자동 선택
-                                        if depth_mm > threshold:
-                                            baseline = baseline_high  # 높은 테이블
+                                        # OBB 주변 바닥 Depth 측정
+                                        surrounding_depth_mm = None
+                                        try:
+                                            # poly를 바깥쪽으로 확장 (30px)
+                                            poly_np = np.array(poly, dtype=np.float32)
+                                            center = poly_np.mean(axis=0)
+                                            expanded_poly = center + (poly_np - center) * 1.5
+                                            
+                                            # 확장된 영역과 원본 영역 마스크 생성
+                                            mask_outer = np.zeros((STREAM_H, STREAM_W), dtype=np.uint8)
+                                            mask_inner = np.zeros((STREAM_H, STREAM_W), dtype=np.uint8)
+                                            cv2.fillPoly(mask_outer, [np.int32(expanded_poly)], 1)
+                                            cv2.fillPoly(mask_inner, [np.int32(poly)], 1)
+                                            
+                                            # 링 영역 (outer - inner)
+                                            mask_ring = mask_outer - mask_inner
+                                            
+                                            # 링 영역의 Depth 값 추출
+                                            ring_depths = d_u16[mask_ring == 1]
+                                            
+                                            if len(ring_depths) > 10:  # 최소 10픽셀 이상
+                                                # 유효한 Depth만 (0이 아닌 값)
+                                                valid_depths = ring_depths[ring_depths > 0]
+                                                if len(valid_depths) > 5:
+                                                    # 중앙값 사용 (노이즈에 강함)
+                                                    median_depth_unit = float(np.median(valid_depths))
+                                                    # RealSense depth scale (보통 0.001)
+                                                    depth_scale = d_frame.get_units()
+                                                    surrounding_depth_mm = median_depth_unit * depth_scale * 1000.0
+                                        except Exception as e:
+                                            # 측정 실패 시 None
+                                            surrounding_depth_mm = None
+                                        
+                                        # BASELINE 선택
+                                        if surrounding_depth_mm is not None:
+                                            # 주변 바닥 측정 성공 - 가까운 BASELINE 선택
+                                            diff_low = abs(surrounding_depth_mm - baseline_low)
+                                            diff_high = abs(surrounding_depth_mm - baseline_high)
+                                            
+                                            if diff_low < diff_high:
+                                                baseline = baseline_low
+                                            else:
+                                                baseline = baseline_high
                                         else:
-                                            baseline = baseline_low   # 낮은 테이블
+                                            # 측정 실패 - fallback: 박스 Z값으로 판단
+                                            threshold = float(getattr(cfg, "BASELINE_THRESHOLD_MM", 650.0))
+                                            if depth_mm > threshold:
+                                                baseline = baseline_high
+                                            else:
+                                                baseline = baseline_low
                                     else:
                                         # 단일 테이블 모드
                                         baseline = float(getattr(cfg, "BASELINE_DEPTH_MM", 560.0))
@@ -537,8 +581,28 @@ class BoxDetector:
                             with self._lock:
                                 self._total_box_count = total_boxes
                             
-                            candidates.sort(key=lambda x: x["dist_center"])
+                            # 박스 선택 우선순위 계산
+                            z_threshold_mm = float(getattr(cfg, "BOX_SELECTION_Z_THRESHOLD_MM", 30.0))
+                            min_z = min(c["z_m"] for c in candidates)
+                            
+                            for c in candidates:
+                                z_diff_mm = (c["z_m"] - min_z) * 1000.0
+                                
+                                if z_diff_mm > z_threshold_mm:
+                                    # Z 차이가 크면 높은 박스 우선 (큰 페널티)
+                                    c["priority"] = z_diff_mm * 10.0 + c["dist_center"]
+                                else:
+                                    # Z 차이가 작으면 XY 중심 거리만 고려
+                                    c["priority"] = c["dist_center"]
+                            
+                            # 우선순위로 정렬 (낮은 값이 우선)
+                            candidates.sort(key=lambda x: x["priority"])
                             best = candidates[0]
+                            
+                            # Preview: 모든 candidates를 빨간색으로 그리기
+                            if bool(getattr(cfg, "SHOW_PREVIEW", False)):
+                                for c in candidates:
+                                    cv2.polylines(vis, [np.int32(c["poly"])], True, (0, 0, 255), 1)
                             
                             # 3D 좌표 계산
                             tx, ty = XY_from_pixel_and_Z(best["cx"], best["cy"], intr, best["z_m"])
