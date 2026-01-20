@@ -36,7 +36,7 @@ def pick_stream_params(usb_desc: str, w: int, h: int, fps: int):
 
     usb_desc = (usb_desc or "").strip()
     if usb_desc.startswith("2"):
-        return 640, 480, 30
+        return 1280, 720, 30
     return 1280, 720, 30
 
 
