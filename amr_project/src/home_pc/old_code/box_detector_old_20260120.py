@@ -16,6 +16,7 @@ import pyrealsense2 as rs
 from ultralytics import YOLO
 
 from config import vision_config as cfg
+
 from .vision_utils import (
     poly_shrink_towards_center,
     depth_roi_stats,
@@ -43,13 +44,6 @@ class BoxDetector:
         self._latest_sample: Optional[Dict[str, float]] = None
         self._collect_samples: list[Dict[str, float]] = []
         self._last_measure_avg: Optional[Dict[str, float]] = None  # 마지막 평균 측정값 캐시
-        
-        # 감지된 박스 개수
-        self._detected_box_count: int = 0
-        
-        # 스택 카운팅 (Depth 기반)
-        self._stack_count: int = 0  # 선택된 박스의 스택 높이
-        self._total_box_count: int = 0  # 전체 박스 개수 (모든 OBB 스택 합산)
         
         # 스레드 동기화
         self._lock = threading.Lock()
@@ -280,36 +274,6 @@ class BoxDetector:
         """
         return self._last_measure_avg
     
-    def get_detected_box_count(self) -> int:
-        """
-        현재 감지된 박스 개수 반환
-        
-        Returns:
-            감지된 박스 개수 (0 이상)
-        """
-        with self._lock:
-            return self._detected_box_count
-    
-    def get_stack_count(self) -> int:
-        """
-        Depth 기반 스택 개수 반환 (선택된 박스 위치)
-        
-        Returns:
-            스택된 박스 개수 (0 이상)
-        """
-        with self._lock:
-            return self._stack_count
-    
-    def get_total_box_count(self) -> int:
-        """
-        전체 박스 개수 반환 (모든 OBB의 스택 합산)
-        
-        Returns:
-            전체 박스 개수 (0 이상)
-        """
-        with self._lock:
-            return self._total_box_count
-    
     # -------------------------
     # RealSense 파이프라인 관리
     # -------------------------
@@ -486,20 +450,6 @@ class BoxDetector:
                                 )
                                 angle = obb_angle_deg_upright0_rightplus(poly)
                                 
-                                # 각 OBB의 스택 개수 계산
-                                stack_for_this = 0
-                                if bool(getattr(cfg, "ENABLE_STACK_COUNTING", False)):
-                                    baseline = float(getattr(cfg, "BASELINE_DEPTH_MM", 500.0))
-                                    box_h = float(getattr(cfg, "BOX_HEIGHT_MM", 58.0))
-                                    depth_mm = float(z_m * 1000.0)
-                                    depth_diff = baseline - depth_mm
-                                    
-                                    # 허용 오차 범위 적용 (반 박스 높이)
-                                    stack_for_this = int((depth_diff + box_h / 2) / box_h)
-                                    stack_for_this = max(0, min(stack_for_this, int(getattr(cfg, "STACK_COUNT_MAX", 10))))
-                                else:
-                                    stack_for_this = 1  # 스택 카운팅 비활성화 시 각 OBB = 1개
-                                
                                 candidates.append({
                                     "z_m": float(z_m),
                                     "poly": poly,
@@ -507,21 +457,10 @@ class BoxDetector:
                                     "dist_center": dist_from_center,
                                     "cx": cx,
                                     "cy": cy,
-                                    "stack_count": stack_for_this,  # 이 OBB의 스택 개수
-
                                 })
                         
                         # 가장 중심에 가까운 박스 선택
                         if candidates:
-                            # 전체 감지된 박스 개수 저장
-                            with self._lock:
-                                self._detected_box_count = len(candidates)
-                            
-                            # 전체 박스 개수 계산 (모든 OBB의 스택 합산)
-                            total_boxes = sum(c["stack_count"] for c in candidates)
-                            with self._lock:
-                                self._total_box_count = total_boxes
-                            
                             candidates.sort(key=lambda x: x["dist_center"])
                             best = candidates[0]
                             
@@ -534,15 +473,6 @@ class BoxDetector:
                                 "angle_deg": float(best["angle"]),
                             }
                             
-                            # Depth 기반 스택 카운팅 (선택된 박스)
-                            if bool(getattr(cfg, "ENABLE_STACK_COUNTING", False)):
-                                # 선택된 박스의 스택 개수 저장
-                                with self._lock:
-                                    self._stack_count = best["stack_count"]
-                            else:
-                                with self._lock:
-                                    self._stack_count = 0
-                            
                             # Jump 필터링
                             if not is_jump(
                                 prev_valid, raw,
@@ -553,18 +483,10 @@ class BoxDetector:
                                 
                                 # Preview 그리기
                                 if bool(getattr(cfg, "SHOW_PREVIEW", False)):
-                                    if bool(getattr(cfg, "ENABLE_STACK_COUNTING", False)):
-                                        txt = (
-                                            f"XYZ: {raw['move_x_mm']:.0f}, {raw['move_y_mm']:.0f}, "
-                                            f"{raw['move_z_mm']:.0f}  ang:{raw['angle_deg']:.1f}  "
-                                            f"OBB: {len(candidates)}  Total: {total_boxes}"
-                                        )
-                                    else:
-                                        txt = (
-                                            f"XYZ: {raw['move_x_mm']:.0f}, {raw['move_y_mm']:.0f}, "
-                                            f"{raw['move_z_mm']:.0f}  ang:{raw['angle_deg']:.1f}  "
-                                            f"Boxes: {len(candidates)}"
-                                        )
+                                    txt = (
+                                        f"XYZ: {raw['move_x_mm']:.0f}, {raw['move_y_mm']:.0f}, "
+                                        f"{raw['move_z_mm']:.0f}  ang:{raw['angle_deg']:.1f}"
+                                    )
                                     cv2.polylines(vis, [np.int32(best["poly"])], True, (0, 255, 0), 2)
                                     cv2.circle(vis, (int(best["cx"]), int(best["cy"])), 5, (0, 255, 0), -1)
                                     cv2.putText(
@@ -575,12 +497,6 @@ class BoxDetector:
                                         (0, 255, 0),
                                         int(getattr(cfg, "OVERLAY_THICKNESS", 2)),
                                     )
-                        else:
-                            # 박스가 없으면 0으로 설정
-                            with self._lock:
-                                self._detected_box_count = 0
-                                self._stack_count = 0
-                                self._total_box_count = 0
                     
                     # 샘플 저장
                     if best_sample is not None:
