@@ -4,11 +4,173 @@ Vision 시스템 유틸리티 함수
 - 기하학 계산
 - 깊이 통계
 - 각도 계산
+- ArUco 마커 감지
 """
 from typing import Optional, Dict
 import numpy as np
 import cv2
+from config import vision_config as cfg
 
+
+# ============================================================
+# ArUco 마커 관련 함수
+# ============================================================
+
+def init_aruco_detector():
+    """
+    ArUco 감지기 초기화
+    
+    Returns:
+        tuple: (aruco_dict, aruco_params) or (None, None)
+    """
+    try:
+        # ArUco 딕셔너리 설정
+        aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+        
+        # DetectorParameters 생성 (OpenCV 버전 호환)
+        try:
+            aruco_params = cv2.aruco.DetectorParameters()
+            print("[ArUco] DetectorParameters() 사용")
+        except:
+            aruco_params = cv2.aruco.DetectorParameters_create()
+            print("[ArUco] DetectorParameters_create() 사용")
+        
+        print(f"[ArUco] Initialized with DICT_4X4_50")
+        return aruco_dict, aruco_params
+        
+    except Exception as e:
+        print(f"[ArUco] Initialization failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return None, None
+
+
+def detect_aruco_markers(color_image, depth_image, aruco_dict, aruco_params):
+    """
+    ArUco 마커 감지 및 Depth 측정
+    
+    Args:
+        color_image: BGR 이미지
+        depth_image: Depth 이미지 (미터 단위)
+        aruco_dict: ArUco 딕셔너리
+        aruco_params: ArUco 파라미터
+    
+    Returns:
+        dict: {marker_id: {'center': (x,y), 'depth_m': z, 'corners': [...]}}
+    """
+    if aruco_dict is None or aruco_params is None:
+        return {}
+    
+    markers = {}
+    
+    try:
+        # 그레이스케일 변환
+        gray = cv2.cvtColor(color_image, cv2.COLOR_BGR2GRAY)
+        
+        # 마커 감지
+        corners, ids, rejected = cv2.aruco.detectMarkers(
+            gray, 
+            aruco_dict, 
+            parameters=aruco_params
+        )
+        
+        # 변화가 있을 때만 출력
+        if not hasattr(detect_aruco_markers, '_last_ids'):
+            detect_aruco_markers._last_ids = None
+        
+        current_ids = ids.flatten().tolist() if ids is not None else []
+        if current_ids != detect_aruco_markers._last_ids:
+            if len(current_ids) > 0:
+                print(f"[ArUco] Detected {len(current_ids)} markers: {current_ids}")
+            else:
+                if detect_aruco_markers._last_ids is not None and len(detect_aruco_markers._last_ids) > 0:
+                    print(f"[ArUco] No markers detected")
+            detect_aruco_markers._last_ids = current_ids
+        
+        if ids is None or len(ids) == 0:
+            return {}
+        
+        # 각 마커 처리
+        for i, marker_id in enumerate(ids.flatten()):
+            marker_corners = corners[i][0]  # shape: (4, 2)
+            
+            # 마커 중심 계산
+            center_x = int(np.mean(marker_corners[:, 0]))
+            center_y = int(np.mean(marker_corners[:, 1]))
+            
+            # ROI 영역에서 Depth 측정
+            roi_size = getattr(cfg, 'ARUCO_ROI_SIZE', 20)
+            x1 = max(0, center_x - roi_size)
+            x2 = min(depth_image.shape[1], center_x + roi_size)
+            y1 = max(0, center_y - roi_size)
+            y2 = min(depth_image.shape[0], center_y + roi_size)
+            
+            roi_depth = depth_image[y1:y2, x1:x2]
+            
+            # 유효한 Depth 값 필터링
+            depth_min = getattr(cfg, 'DEPTH_MIN_M', 0.15)
+            depth_max = getattr(cfg, 'DEPTH_MAX_M', 3.0)
+            valid_depths = roi_depth[
+                (roi_depth > depth_min) & 
+                (roi_depth < depth_max)
+            ]
+            
+            if len(valid_depths) < 10:
+                continue
+            
+            # 중앙값 사용 (노이즈에 강함)
+            marker_depth_m = float(np.median(valid_depths))
+            
+            markers[int(marker_id)] = {
+                'center': (center_x, center_y),
+                'depth_m': marker_depth_m,
+                'corners': marker_corners.tolist()
+            }
+        
+        return markers
+        
+    except Exception as e:
+        print(f"[ArUco] Detection error: {e}")
+        return {}
+
+
+def get_baseline_from_markers(markers, current_table="1"):
+    """
+    마커로부터 BASELINE 계산
+    
+    Args:
+        markers: detect_aruco_markers 결과
+        current_table: 현재 테이블 번호
+    
+    Returns:
+        float or None: BASELINE (mm), 마커 없으면 None
+    """
+    if not markers:
+        return None
+    
+    # 현재 테이블의 마커 ID 가져오기
+    table_marker_ids = getattr(cfg, 'TABLE_MARKER_IDS', {"1": 1, "2": 2})
+    table_marker_id = table_marker_ids.get(current_table)
+    if table_marker_id is None:
+        return None
+    
+    # 해당 ID의 마커만 필터링
+    target_markers = [m for mid, m in markers.items() if mid == table_marker_id]
+    
+    min_markers = getattr(cfg, 'ARUCO_MIN_MARKERS', 1)
+    if len(target_markers) < min_markers:
+        return None
+    
+    # 모든 마커의 평균 Depth 계산
+    depths = [m['depth_m'] for m in target_markers]
+    baseline_m = float(np.mean(depths))
+    baseline_mm = baseline_m * 1000.0
+    
+    return baseline_mm
+
+
+# 기하학 함수
+# ============================================================
 
 def poly_shrink_towards_center(poly4x2: np.ndarray, margin_px: float) -> np.ndarray:
     """

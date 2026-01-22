@@ -54,9 +54,9 @@ ANGLE_TO_J6_SIGN = +1.0
 J6_MAX_STEP_DEG = 45.0
 J4_MAX_STEP_DEG = 45.0  # J4 최대 회전 각도
 
-MOVEJ_VEL_J6 = 90.0
+MOVEJ_VEL_J6 = 100.0              # J6 회전 속도 (0-180 범위, 100 권장)
 MOVEJ_BLENDT_J6 = -1.0
-MOVEJ_VEL_J4 = 90.0
+MOVEJ_VEL_J4 = 100.0              # J4 회전 속도
 MOVEJ_BLENDT_J4 = -1.0
 
 # ============================================================
@@ -86,19 +86,20 @@ STEP_TRY_LIST_DEFAULT = [STEP_SCALE_DEFAULT, 0.05, 0.02, 0.01]
 # ============================================================
 # SPEED CONFIG (속도 설정)
 # ============================================================
-MOVE_CART_VEL_DEFAULT = 90.0          # 기본 속도
-MOVE_CART_VEL_FALLBACKS = [15.0, 8.0, 3.0]
+# MoveCart vel 범위: 0~100 (비율, 절대값 아님!)
+MOVE_CART_VEL_DEFAULT = 30.0         # 기본 속도 (최대값: 100)
+MOVE_CART_VEL_FALLBACKS = [80.0, 60.0, 40.0, 20.0]  # Fallback 단계
 MOVE_CART_VEL_LIST = [MOVE_CART_VEL_DEFAULT] + MOVE_CART_VEL_FALLBACKS
 
-MOVE_CART_ACC = 50.0                  # 가속도
-MOVE_CART_OVL = 100.0                 # override(%) - 20 → 100으로 증가
-MOVE_CART_BLENDT = -1.0               # blending time
-MOVE_CART_EX = -1                     # 확장 옵션
+MOVE_CART_ACC = 0.0                   # 가속도 (SDK에서 사용 안 함, 0.0 고정)
+MOVE_CART_OVL = 80.0                 # override(%) - 최대
+MOVE_CART_BLENDT = 300              # blending time (-1: blocking)
+MOVE_CART_EX = -1                     # 확장 옵션 (joint config)
 
-MOVEJ_VEL_RETURN = 90.0
+MOVEJ_VEL_RETURN = 100.0              # 복귀 속도 (0-180 범위)
 MOVEJ_BLENDT_RETURN = -1.0
 
-MOVEJ_VEL_WP11 = 90.0
+MOVEJ_VEL_WP11 = 100.0                # WP11 속도
 MOVEJ_BLENDT_WP11 = -1.0
 
 # ============================================================

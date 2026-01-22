@@ -21,7 +21,10 @@ from .vision_utils import (
     depth_roi_stats,
     XY_from_pixel_and_Z,
     obb_angle_deg_upright0_rightplus,
-    is_jump
+    is_jump,
+    init_aruco_detector,
+    detect_aruco_markers,
+    get_baseline_from_markers
 )
 
 
@@ -78,8 +81,12 @@ class BoxDetector:
         self._log_every = 5
         
         # ArUco 초기화
+        print(f"[BoxDetector.__init__] ENABLE_ARUCO = {cfg.ENABLE_ARUCO}")
         if cfg.ENABLE_ARUCO:
-            self._init_aruco()
+            print("[BoxDetector.__init__] Calling init_aruco_detector()...")
+            self._aruco_dict, self._aruco_params = init_aruco_detector()
+            print(f"[BoxDetector.__init__] ArUco dict: {self._aruco_dict}")
+            print(f"[BoxDetector.__init__] ArUco params: {self._aruco_params}")
 
     
     def is_running(self) -> bool:
@@ -475,17 +482,35 @@ class BoxDetector:
                     detected_markers = {}
                     aruco_baseline_mm = None
                     if cfg.ENABLE_ARUCO:
-                        depth_m = d_u16.astype(np.float32) * self._depth_scale
-                        detected_markers = self._detect_aruco_markers(img, depth_m)
-                        
-                        # 마커로 BASELINE 계산 (현재 테이블은 나중에 GUI에서 가져와야 함)
-                        # 일단 Table "1"로 시도
-                        current_table = "1"  # TODO: GUI에서 가져오기
-                        aruco_baseline_mm = self._get_baseline_from_markers(detected_markers, current_table)
-                        
-                        # 감지된 마커 정보 저장
-                        with self._lock:
-                            self._detected_markers = detected_markers
+                        if self._aruco_dict is None:
+                            print("[ArUco] WARNING: ArUco dict is None!")
+                        else:
+                            depth_m = d_u16.astype(np.float32) * self._depth_scale
+                            detected_markers = detect_aruco_markers(
+                                img, depth_m, 
+                                self._aruco_dict, self._aruco_params
+                            )
+                            
+                            # 마커로 BASELINE 계산
+                            current_table = "1"  # TODO: GUI에서 가져오기
+                            aruco_baseline_mm = get_baseline_from_markers(
+                                detected_markers, current_table
+                            )
+                            
+                            # 디버깅: BASELINE 값 출력
+                            if aruco_baseline_mm is not None:
+                                if not hasattr(self, '_last_aruco_baseline'):
+                                    self._last_aruco_baseline = None
+                                
+                                # 값이 크게 바뀌면 출력 (±10mm 이상)
+                                if self._last_aruco_baseline is None or \
+                                   abs(aruco_baseline_mm - self._last_aruco_baseline) > 10.0:
+                                    print(f"[ArUco] BASELINE: {aruco_baseline_mm:.1f}mm")
+                                    self._last_aruco_baseline = aruco_baseline_mm
+                            
+                            # 감지된 마커 정보 저장
+                            with self._lock:
+                                self._detected_markers = detected_markers
                             if aruco_baseline_mm is not None:
                                 self._aruco_baseline_mm = aruco_baseline_mm
                         
@@ -609,15 +634,19 @@ class BoxDetector:
                                                 baseline = baseline_high
                                             else:
                                                 baseline = baseline_low
+                                        
+                                        depth_diff = baseline - depth_mm  # 박스 쌓이면 Z 감소
+                                        
+                                        # 허용 오차 범위 적용 (반 박스 높이)
+                                        stack_for_this = int((depth_diff + box_h / 2) / box_h)
+                                        stack_for_this = max(0, min(stack_for_this, int(getattr(cfg, "STACK_COUNT_MAX", 10))))
+                                    
                                     else:
                                         # 단일 테이블 모드
                                         baseline = float(getattr(cfg, "BASELINE_DEPTH_MM", 560.0))
-                                    
-                                    depth_diff = baseline - depth_mm  # 박스 쌓이면 Z 감소
-                                    
-                                    # 허용 오차 범위 적용 (반 박스 높이)
-                                    stack_for_this = int((depth_diff + box_h / 2) / box_h)
-                                    stack_for_this = max(0, min(stack_for_this, int(getattr(cfg, "STACK_COUNT_MAX", 10))))
+                                        depth_diff = baseline - depth_mm
+                                        stack_for_this = int((depth_diff + box_h / 2) / box_h)
+                                        stack_for_this = max(0, min(stack_for_this, int(getattr(cfg, "STACK_COUNT_MAX", 10))))
                                 else:
                                     stack_for_this = 1  # 스택 카운팅 비활성화 시 각 OBB = 1개
                                 
@@ -666,29 +695,14 @@ class BoxDetector:
                                 for c in candidates:
                                     cv2.polylines(vis, [np.int32(c["poly"])], True, (0, 0, 255), 1)
                             
-                            # 3D 좌표 계산
-                            # ArUco 마커로 보정 (활성화되어 있고 마커가 감지된 경우만)
-                            if cfg.ENABLE_ARUCO and cfg.ARUCO_CENTER_CORRECTION and detected_markers:
-                                corrected_x_mm, corrected_y_mm = self._correct_box_center_with_markers(
-                                    (best["cx"], best["cy"]),
-                                    best["z_m"],
-                                    detected_markers
-                                )
-                                raw = {
-                                    "move_x_mm": float(corrected_x_mm),
-                                    "move_y_mm": float(corrected_y_mm),
-                                    "move_z_mm": float(best["z_m"] * 1000.0),
-                                    "angle_deg": float(best["angle"]),
-                                }
-                            else:
-                                # 기존 방식
-                                tx, ty = XY_from_pixel_and_Z(best["cx"], best["cy"], intr, best["z_m"])
-                                raw = {
-                                    "move_x_mm": float(tx * 1000.0),
-                                    "move_y_mm": float(ty * 1000.0),
-                                    "move_z_mm": float(best["z_m"] * 1000.0),
-                                    "angle_deg": float(best["angle"]),
-                                }
+                            # 3D 좌표 계산 (기존 방식만 사용)
+                            tx, ty = XY_from_pixel_and_Z(best["cx"], best["cy"], intr, best["z_m"])
+                            raw = {
+                                "move_x_mm": float(tx * 1000.0),
+                                "move_y_mm": float(ty * 1000.0),
+                                "move_z_mm": float(best["z_m"] * 1000.0),
+                                "angle_deg": float(best["angle"]),
+                            }
                             
                             # Depth 기반 스택 카운팅 (선택된 박스)
                             if bool(getattr(cfg, "ENABLE_STACK_COUNTING", False)):
@@ -824,201 +838,3 @@ class BoxDetector:
                     cv2.destroyAllWindows()
                 except Exception:
                     pass
-    
-    # =========================================================================
-    # ArUco 마커 관련 메서드
-    # =========================================================================
-    
-    def _init_aruco(self):
-        """ArUco 감지기 초기화"""
-        try:
-            # ArUco 딕셔너리 설정 (test 코드와 동일하게)
-            self._aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-            
-            # DetectorParameters 생성 (OpenCV 버전 호환)
-            try:
-                # OpenCV 4.7.0 이상
-                self._aruco_params = cv2.aruco.DetectorParameters()
-                print("[ArUco] DetectorParameters() 사용")
-            except:
-                # 이전 버전
-                self._aruco_params = cv2.aruco.DetectorParameters_create()
-                print("[ArUco] DetectorParameters_create() 사용")
-            
-            print(f"[ArUco] Initialized with DICT_4X4_50")
-            print(f"[ArUco] Dictionary object: {self._aruco_dict}")
-            print(f"[ArUco] Parameters object: {self._aruco_params}")
-            
-        except Exception as e:
-            print(f"[ArUco] Initialization failed: {e}")
-            import traceback
-            traceback.print_exc()
-            self._aruco_dict = None
-            self._aruco_params = None
-    
-    def _detect_aruco_markers(self, color_image, depth_image):
-        """
-        ArUco 마커 감지 및 Depth 측정
-        
-        Args:
-            color_image: BGR 이미지
-            depth_image: Depth 이미지 (미터 단위)
-        
-        Returns:
-            dict: {marker_id: {'center': (x,y), 'depth_m': z, 'corners': [...]}}
-        """
-        if not cfg.ENABLE_ARUCO or self._aruco_dict is None:
-            return {}
-        
-        markers = {}
-        
-        try:
-            # 그레이스케일 변환
-            gray = cv2.cvtColor(color_image, cv2.COLOR_BGR2GRAY)
-            
-            # 마커 감지
-            corners, ids, rejected = cv2.aruco.detectMarkers(
-                gray, 
-                self._aruco_dict, 
-                parameters=self._aruco_params
-            )
-            
-            # 디버깅: 감지 결과 출력
-            if ids is not None and len(ids) > 0:
-                print(f"[ArUco] Detected {len(ids)} markers: {ids.flatten().tolist()}")
-            
-            if ids is None or len(ids) == 0:
-                return {}
-            
-            # 각 마커 처리
-            for i, marker_id in enumerate(ids.flatten()):
-                marker_corners = corners[i][0]  # shape: (4, 2)
-                
-                # 마커 중심 계산
-                center_x = int(np.mean(marker_corners[:, 0]))
-                center_y = int(np.mean(marker_corners[:, 1]))
-                
-                # ROI 영역에서 Depth 측정
-                roi_size = cfg.ARUCO_ROI_SIZE
-                x1 = max(0, center_x - roi_size)
-                x2 = min(depth_image.shape[1], center_x + roi_size)
-                y1 = max(0, center_y - roi_size)
-                y2 = min(depth_image.shape[0], center_y + roi_size)
-                
-                roi_depth = depth_image[y1:y2, x1:x2]
-                
-                # 유효한 Depth 값 필터링
-                valid_depths = roi_depth[
-                    (roi_depth > cfg.DEPTH_MIN_M) & 
-                    (roi_depth < cfg.DEPTH_MAX_M)
-                ]
-                
-                if len(valid_depths) < 10:
-                    continue
-                
-                # 중앙값 사용 (노이즈에 강함)
-                marker_depth_m = float(np.median(valid_depths))
-                
-                markers[int(marker_id)] = {
-                    'center': (center_x, center_y),
-                    'depth_m': marker_depth_m,
-                    'corners': marker_corners.tolist()
-                }
-            
-            return markers
-            
-        except Exception as e:
-            print(f"[ArUco] Detection error: {e}")
-            return {}
-    
-    def _get_baseline_from_markers(self, markers, current_table="1"):
-        """
-        마커로부터 BASELINE 계산
-        
-        Args:
-            markers: _detect_aruco_markers 결과
-            current_table: 현재 테이블 번호
-        
-        Returns:
-            float or None: BASELINE (mm), 마커 없으면 None
-        """
-        if not markers or not cfg.ARUCO_BASELINE_PRIORITY:
-            return None
-        
-        # 현재 테이블의 마커 ID
-        table_marker_id = cfg.TABLE_MARKER_IDS.get(current_table)
-        if table_marker_id is None:
-            return None
-        
-        # 해당 ID의 모든 마커 수집
-        marker_depths = []
-        for marker_id, marker_info in markers.items():
-            if marker_id == table_marker_id:
-                marker_depths.append(marker_info['depth_m'])
-        
-        if len(marker_depths) < cfg.ARUCO_MIN_MARKERS:
-            return None
-        
-        # 평균 Depth를 BASELINE으로 사용
-        baseline_m = np.mean(marker_depths)
-        baseline_mm = baseline_m * 1000.0
-        
-        return float(baseline_mm)
-    
-    def _correct_box_center_with_markers(self, box_center_px, box_depth_m, markers):
-        """
-        마커 좌표계를 이용한 박스 중심 보정
-        
-        Args:
-            box_center_px: (cx, cy) 박스 중심 픽셀
-            box_depth_m: 박스 깊이 (미터)
-            markers: 감지된 마커들
-        
-        Returns:
-            tuple: (corrected_x_mm, corrected_y_mm) 보정된 XY 좌표 (mm)
-        """
-        if not cfg.ARUCO_CENTER_CORRECTION or len(markers) < 1:
-            # 마커 없으면 기존 방식 사용
-            from .vision_utils import XY_from_pixel_and_Z
-            x_mm, y_mm = XY_from_pixel_and_Z(
-                box_center_px[0], 
-                box_center_px[1], 
-                box_depth_m
-            )
-            return x_mm, y_mm
-        
-        # 마커 1개 이상이면 마커 크기로 스케일 계산
-        marker_list = list(markers.values())
-        
-        # 첫 번째 마커 사용
-        marker = marker_list[0]
-        marker_center = np.array(marker['center'])
-        marker_corners = np.array(marker['corners'])
-        marker_depth_m = marker['depth_m']
-        
-        # 마커 픽셀 크기 계산 (코너 간 평균 거리)
-        corner_dists = []
-        for i in range(4):
-            j = (i + 1) % 4
-            dist = np.linalg.norm(marker_corners[j] - marker_corners[i])
-            corner_dists.append(dist)
-        marker_size_px = np.mean(corner_dists)
-        
-        # 마커 실제 크기 (mm)
-        marker_size_mm = cfg.ARUCO_MARKER_SIZE_MM
-        
-        # 픽셀당 mm 계산 (마커 깊이에서)
-        px_to_mm_scale = marker_size_mm / marker_size_px if marker_size_px > 0 else 1.0
-        
-        # 박스와 마커 간 픽셀 거리
-        box_px = np.array(box_center_px)
-        pixel_offset = box_px - marker_center
-        
-        # 깊이 차이 보정 (박스와 마커 깊이가 다를 수 있음)
-        depth_ratio = box_depth_m / marker_depth_m if marker_depth_m > 0 else 1.0
-        
-        # mm로 변환 (깊이 차이 보정 포함)
-        corrected_x_mm = float(pixel_offset[0] * px_to_mm_scale * depth_ratio)
-        corrected_y_mm = float(pixel_offset[1] * px_to_mm_scale * depth_ratio)
-        
-        return corrected_x_mm, corrected_y_mm
