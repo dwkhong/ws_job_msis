@@ -548,13 +548,13 @@ class BoxDetector:
                                     box_h = float(getattr(cfg, "BOX_HEIGHT_MM", 58.0))
                                     depth_mm = float(z_m * 1000.0)
                                     
-                                    # ArUco 마커 BASELINE 우선 사용
-                                    if aruco_baseline_mm is not None:
+                                    # ArUco 마커 BASELINE 우선 사용 (활성화되어 있고 감지된 경우만)
+                                    if cfg.ENABLE_ARUCO and cfg.ARUCO_BASELINE_PRIORITY and aruco_baseline_mm is not None:
                                         baseline_mm = aruco_baseline_mm
                                         height_from_baseline = baseline_mm - depth_mm
                                         stack_for_this = max(0, int(round(height_from_baseline / box_h)))
                                     
-                                    # 다중 테이블 높이 지원 (ArUco 없을 때 Fallback)
+                                    # 다중 테이블 높이 지원 (기본 방식)
                                     elif bool(getattr(cfg, "USE_MULTI_BASELINE", False)):
                                         baseline_low = float(getattr(cfg, "BASELINE_DEPTH_LOW_MM", 560.0))
                                         baseline_high = float(getattr(cfg, "BASELINE_DEPTH_HIGH_MM", 750.0))
@@ -667,8 +667,8 @@ class BoxDetector:
                                     cv2.polylines(vis, [np.int32(c["poly"])], True, (0, 0, 255), 1)
                             
                             # 3D 좌표 계산
-                            # ArUco 마커로 보정 (있으면)
-                            if detected_markers and cfg.ARUCO_CENTER_CORRECTION:
+                            # ArUco 마커로 보정 (활성화되어 있고 마커가 감지된 경우만)
+                            if cfg.ENABLE_ARUCO and cfg.ARUCO_CENTER_CORRECTION and detected_markers:
                                 corrected_x_mm, corrected_y_mm = self._correct_box_center_with_markers(
                                     (best["cx"], best["cy"]),
                                     best["z_m"],
@@ -835,10 +835,22 @@ class BoxDetector:
             # ArUco 딕셔너리 설정
             dict_type = getattr(cv2.aruco, cfg.ARUCO_DICT_TYPE, cv2.aruco.DICT_4X4_50)
             self._aruco_dict = cv2.aruco.getPredefinedDictionary(dict_type)
-            self._aruco_params = cv2.aruco.DetectorParameters()
+            
+            # DetectorParameters 생성 (OpenCV 버전 호환)
+            try:
+                # OpenCV 4.7.0 이상
+                self._aruco_params = cv2.aruco.DetectorParameters()
+            except:
+                # 이전 버전
+                self._aruco_params = cv2.aruco.DetectorParameters_create()
+            
             print(f"[ArUco] Initialized with {cfg.ARUCO_DICT_TYPE}")
+            print(f"[ArUco] Dictionary type: {dict_type}")
+            
         except Exception as e:
             print(f"[ArUco] Initialization failed: {e}")
+            import traceback
+            traceback.print_exc()
             self._aruco_dict = None
             self._aruco_params = None
     
@@ -868,6 +880,10 @@ class BoxDetector:
                 self._aruco_dict, 
                 parameters=self._aruco_params
             )
+            
+            # 디버깅: 감지 결과 출력
+            if ids is not None and len(ids) > 0:
+                print(f"[ArUco] Detected {len(ids)} markers: {ids.flatten().tolist()}")
             
             if ids is None or len(ids) == 0:
                 return {}
