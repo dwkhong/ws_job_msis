@@ -87,19 +87,19 @@ STEP_TRY_LIST_DEFAULT = [STEP_SCALE_DEFAULT, 0.05, 0.02, 0.01]
 # SPEED CONFIG (속도 설정)
 # ============================================================
 # MoveCart vel 범위: 0~100 (비율, 절대값 아님!)
-MOVE_CART_VEL_DEFAULT = 30.0         # 기본 속도 (최대값: 100)
+MOVE_CART_VEL_DEFAULT = 20.0         # 기본 속도 (최대값: 100)
 MOVE_CART_VEL_FALLBACKS = [80.0, 60.0, 40.0, 20.0]  # Fallback 단계
 MOVE_CART_VEL_LIST = [MOVE_CART_VEL_DEFAULT] + MOVE_CART_VEL_FALLBACKS
 
-MOVE_CART_ACC = 0.0                   # 가속도 (SDK에서 사용 안 함, 0.0 고정)
-MOVE_CART_OVL = 80.0                 # override(%) - 최대
-MOVE_CART_BLENDT = 300              # blending time (-1: blocking)
-MOVE_CART_EX = -1                     # 확장 옵션 (joint config)
+MOVE_CART_ACC = 0.0                     # 가속도 (SDK에서 사용 안 함, 0.0 고정)
+MOVE_CART_OVL = 60.0                    # override(%) - 최대
+MOVE_CART_BLENDT = 300                  # blending time (-1: blocking)
+MOVE_CART_EX = -1                       # 확장 옵션 (joint config)
 
-MOVEJ_VEL_RETURN = 100.0              # 복귀 속도 (0-180 범위)
+MOVEJ_VEL_RETURN = 70.0              # 복귀 속도 (0-100 범위)
 MOVEJ_BLENDT_RETURN = -1.0
 
-MOVEJ_VEL_WP11 = 100.0                # WP11 속도
+MOVEJ_VEL_WP11 = 70.0                # WP11 속도
 MOVEJ_BLENDT_WP11 = -1.0
 
 # ============================================================
