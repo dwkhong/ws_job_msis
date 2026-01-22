@@ -24,7 +24,7 @@ FPS = 30
 # Measurement
 # ============================================================
 AVG_N = 10          # 평균 계산에 사용할 샘플 수
-TIMEOUT_SEC = 25.0  # 측정 타임아웃
+TIMEOUT_SEC = 10.0  # 측정 타임아웃
 
 # ============================================================
 # Depth ROI
@@ -58,14 +58,38 @@ OVERLAY_THICKNESS = 2
 PRINT_SELECTED_EACH_ACCEPT = True
 
 # ============================================================
+# ArUco Marker Detection
+# ============================================================
+ENABLE_ARUCO = True                # ArUco 마커 감지 활성화
+ARUCO_DICT_TYPE = "DICT_4X4_50"    # ArUco 딕셔너리 타입
+ARUCO_MARKER_SIZE_MM = 80.0        # 마커 크기 (mm) - 검은색 외곽 테두리 기준
+
+# 테이블별 마커 ID (같은 ID를 여러 개 사용)
+TABLE_MARKER_IDS = {
+    "1": 1,   # Table 1: 마커 ID 1을 여러 개
+    "2": 2,   # Table 2: 마커 ID 2를 여러 개
+    "3": 3,   # Table 3: 마커 ID 3을 여러 개
+    "4": 4,   # Table 4: 마커 ID 4을 여러 개
+    "5": 5,   # Table 5: 마커 ID 5를 여러 개
+}
+
+# ArUco 감지 설정
+ARUCO_MIN_MARKERS = 1              # 최소 감지 필요 마커 개수
+ARUCO_BASELINE_PRIORITY = True     # 마커 BASELINE 우선 사용
+ARUCO_CENTER_CORRECTION = True     # 마커로 박스 중심 보정
+
+# ArUco ROI 설정 (마커 중심 주변 영역)
+ARUCO_ROI_SIZE = 20                # 마커 중심 주변 ROI 크기 (픽셀)
+
+# ============================================================
 # Stack Counting (Depth-based)
 # ============================================================
 ENABLE_STACK_COUNTING = True       # 스택 카운팅 활성화
 USE_MULTI_BASELINE = True          # 여러 테이블 높이 자동 감지
 
-# 테이블 높이 설정
-BASELINE_DEPTH_LOW_MM = 660.0      # 낮은 테이블 깊이 (mm)
-BASELINE_DEPTH_HIGH_MM = 860.0     # 높은 테이블 깊이 (mm)
+# 테이블 높이 설정 (ArUco 없을 때 Fallback)
+BASELINE_DEPTH_LOW_MM = 560.0      # 낮은 테이블 깊이 (mm)
+BASELINE_DEPTH_HIGH_MM = 760.0     # 높은 테이블 깊이 (mm)
 
 # 박스 설정
 BOX_HEIGHT_MM = 58.0               # 박스 1개 높이 (mm)
