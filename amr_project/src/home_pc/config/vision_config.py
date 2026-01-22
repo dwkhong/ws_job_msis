@@ -60,9 +60,9 @@ PRINT_SELECTED_EACH_ACCEPT = True
 # ============================================================
 # ArUco Marker Detection
 # ============================================================
-ENABLE_ARUCO = True                # ArUco 마커 감지 활성화
+ENABLE_ARUCO = False                # ArUco 마커 감지 활성화
 ARUCO_DICT_TYPE = "DICT_4X4_50"    # ArUco 딕셔너리 타입
-ARUCO_MARKER_SIZE_MM = 80.0        # 마커 크기 (mm) - 검은색 외곽 테두리 기준
+ARUCO_MARKER_SIZE_MM = 73.0        # 마커 크기 (mm) - 검은색 외곽 테두리 기준
 
 # 테이블별 마커 ID (같은 ID를 여러 개 사용)
 TABLE_MARKER_IDS = {
@@ -75,8 +75,8 @@ TABLE_MARKER_IDS = {
 
 # ArUco 감지 설정
 ARUCO_MIN_MARKERS = 1              # 최소 감지 필요 마커 개수
-ARUCO_BASELINE_PRIORITY = True     # 마커 BASELINE 우선 사용
-ARUCO_CENTER_CORRECTION = True     # 마커로 박스 중심 보정
+ARUCO_BASELINE_PRIORITY = False     # 마커 BASELINE 우선 사용
+ARUCO_CENTER_CORRECTION = False    # 마커로 박스 중심 보정
 
 # ArUco ROI 설정 (마커 중심 주변 영역)
 ARUCO_ROI_SIZE = 20                # 마커 중심 주변 ROI 크기 (픽셀)
