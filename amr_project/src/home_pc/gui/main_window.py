@@ -255,6 +255,19 @@ class RobotGUI:
         self.vel_slow_var = tk.DoubleVar(value=self.pose_manager.get_param("vel_slow", 30.0))
         ttk.Entry(frame, textvariable=self.vel_slow_var, width=10).grid(row=1, column=3, sticky=tk.W, padx=5)
 
+        ttk.Label(frame, text="Approach Offset (mm):").grid(row=2, column=0, sticky=tk.W, padx=5)
+        self.approach_offset_var = tk.DoubleVar(value=self.pose_manager.get_param("approach_offset", 40.0))
+        ttk.Entry(frame, textvariable=self.approach_offset_var, width=10).grid(row=2, column=1, sticky=tk.W, padx=5)
+
+        ttk.Label(frame, text="Push Direction:").grid(row=2, column=2, sticky=tk.W, padx=5)
+        self.push_direction_var = tk.StringVar(value=self.pose_manager.get_param("push_direction", "LEFT"))
+        self.push_combo = ttk.Combobox(frame, textvariable=self.push_direction_var, values=["LEFT", "RIGHT"], width=8, state="readonly")
+        self.push_combo.grid(row=2, column=3, sticky=tk.W, padx=5)
+
+        ttk.Label(frame, text="Column Offset (mm):").grid(row=2, column=4, sticky=tk.W, padx=5)
+        self.column_offset_var = tk.DoubleVar(value=self.pose_manager.get_param("column_offset", 100.0))
+        ttk.Entry(frame, textvariable=self.column_offset_var, width=10).grid(row=2, column=5, sticky=tk.W, padx=5)
+
         ttk.Button(frame, text="Save Parameters", command=self.on_save_params).grid(row=1, column=4, columnspan=2, sticky=tk.W, padx=5)
 
     def create_run_frame(self):
@@ -379,8 +392,8 @@ class RobotGUI:
     def on_save_home(self):
         (e_p, pose), (e_j, joint) = self.robot_state.read_pose_joint()
         if e_j == 0 and joint:
-            self.robot_state.set_initial_joint6(joint)
-            self.log(f"Home saved: J6={joint[5]:.3f} deg")
+            self.robot_state.set_initial_joint6(joint, force=True)  # 강제로 덮어쓰기
+            self.log(f"Home saved: {self.robot_state.fmt_joint(joint)}")
             messagebox.showinfo("Success", "Home position saved.")
         else:
             self.log("Failed to save home")
@@ -429,6 +442,9 @@ class RobotGUI:
             self.pose_manager.set_param("box_height", self.box_height_var.get())
             self.pose_manager.set_param("vel_normal", self.vel_normal_var.get())
             self.pose_manager.set_param("vel_slow", self.vel_slow_var.get())
+            self.pose_manager.set_param("approach_offset", self.approach_offset_var.get())
+            self.pose_manager.set_param("push_direction", self.push_direction_var.get())
+            self.pose_manager.set_param("column_offset", self.column_offset_var.get())
 
             if self.pose_manager.save():
                 self.log("Parameters saved")
@@ -463,14 +479,23 @@ class RobotGUI:
         box_height = float(self.box_height_var.get())
         vel_normal = float(self.vel_normal_var.get())
         vel_slow = float(self.vel_slow_var.get())
+        approach_offset = float(self.approach_offset_var.get())
+        push_direction = self.push_direction_var.get()
+        column_offset = float(self.column_offset_var.get())
 
+        total_boxes = num_boxes * 2  # 2 columns
+        
         answer = messagebox.askyesno(
             "Manual Stacking",
             f"Start manual stacking?\n\n"
             f"Table: {table}\n"
-            f"Boxes: {num_boxes}\n"
+            f"Boxes per Column: {num_boxes}\n"
+            f"Total Boxes: {total_boxes}\n"
             f"Height: {box_height} mm\n"
-            f"Speed: {vel_normal}/{vel_slow}"
+            f"Speed: {vel_normal}/{vel_slow}\n"
+            f"Approach: {approach_offset} mm\n"
+            f"Column Offset: {column_offset} mm\n"
+            f"Push: {push_direction}"
         )
         if not answer:
             return
@@ -488,6 +513,9 @@ class RobotGUI:
                     safe_place=safe_place,
                     num_boxes=num_boxes,
                     box_height=box_height,
+                    approach_offset=approach_offset,
+                    push_direction=push_direction,
+                    column_offset=column_offset,
                     vel_normal=vel_normal,
                     vel_slow=vel_slow,
                     status_callback=self.log

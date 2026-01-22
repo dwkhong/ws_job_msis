@@ -37,26 +37,23 @@ GRIP_BLOCK = 0
 
 TOOL = 0
 USER = 0
-VEL = 30
+VEL = 20
 BLENDT = 100
 
 # Joint increments (degrees)
 JOINT_INCREMENT = 5 #change based on how much u want to move joint on a single click
 
 # Default poses (Cartesian: [x, y, z, rx, ry, rz])
-DEFAULT_PICK_POSE = [198.45, 361.97, 373.7, 178.27, -1.419, 141.776]
-DEFAULT_PLACE_POSE = [-245.46, -420.488, 148.68, -179.71, 1.228, -35.907]
-DEFAULT_SAFE_PICK = [138.812, 287.380, 521.817, 173.107, -1.087, 140.347]
-DEFAULT_SAFE_PLACE = [-175.52, -320.94, 491.52, 179.57, 0.597, -39.545]
 home_pose= [89.690, 116.508, 846.874, -177.624, 52.775, -79.285]#[182.082, 340.817, 475.358, 175.088, 2.385, 142.770]#check to avoid crash
 #[49.385, -123.93, 35.491, -56.425, -92.664, 91.885]
-cam_pose=[444.802, -127.042, 688.304, -179.148, 1.272, 179.836]
+cam_pose=[391.242, -111.323, 749.343, 179.968, 1.152, -179.211]
 DEFAULT_NUM_BOXES = 4
 DEFAULT_BOX_HEIGHT = 58.0
 DEFAULT_APPROACH_OFFSET = 40.0
+DEFAULT_COLUMN_OFFSET = 100.0
 Z_THRESHHOLD = 321  #
-POSES_FILE = "saved_poses.json"
-
+POSES_FILE = "saved_poses_horizontal_stack.json"
+PUSH='LEFT'
 ############ AMR #################
 with open("D:/Robot/fairino-python-sdk-main/fairino-python-sdk-main/windows/msis_amr_motion/config.yaml", 'r') as stream:
     try:
@@ -165,7 +162,7 @@ def open_gripper():
         return False
 
 
-def close_gripper(angle=21):#cuurently 60 for white box
+def close_gripper(angle=23):#cuurently 60 for white box     
     if not robot:
         return False
     if stop_flag or pause_flag:
@@ -279,64 +276,46 @@ def load_poses():
 
     # Default structure with 5 tables
     def default_tables():
-        tables = {}
-        for i in range(1, 6):
-            tables[str(i)] = {
-                "pick_pose": DEFAULT_PICK_POSE,
-                "place_pose": DEFAULT_PLACE_POSE,
-                "safe_pick": DEFAULT_SAFE_PICK,
-                "safe_place": DEFAULT_SAFE_PLACE
-            }
-        return tables
+        return {}
 
     if not data:
         return {
             "tables": default_tables(),
             "num_boxes": DEFAULT_NUM_BOXES,
             "box_height": DEFAULT_BOX_HEIGHT,
-            "approach_offset": DEFAULT_APPROACH_OFFSET
+            "approach_offset": DEFAULT_APPROACH_OFFSET,
+            "column_offset": DEFAULT_COLUMN_OFFSET
         }
 
     # Backwards compatibility: old flat format -> migrate into table '1'
     if any(k in data for k in ("pick_pose", "place_pose", "safe_pick", "safe_place")):
         tables = default_tables()
-        tables["1"]["pick_pose"] = data.get("pick_pose", DEFAULT_PICK_POSE)
-        tables["1"]["place_pose"] = data.get("place_pose", DEFAULT_PLACE_POSE)
-        tables["1"]["safe_pick"] = data.get("safe_pick", DEFAULT_SAFE_PICK)
-        tables["1"]["safe_place"] = data.get("safe_place", DEFAULT_SAFE_PLACE)
+        tables["1"] = {
+            "pick_pose": data.get("pick_pose"),
+            "place_pose": data.get("place_pose"),
+            "safe_pick": data.get("safe_pick"),
+            "safe_place": data.get("safe_place")
+        }
         return {
             "tables": tables,
             "num_boxes": data.get("num_boxes", DEFAULT_NUM_BOXES),
             "box_height": data.get("box_height", DEFAULT_BOX_HEIGHT),
-            "approach_offset": data.get("approach_offset", DEFAULT_APPROACH_OFFSET)
+            "approach_offset": data.get("approach_offset", DEFAULT_APPROACH_OFFSET),
+            "column_offset": data.get("column_offset", DEFAULT_COLUMN_OFFSET)
         }
 
     # If data already in new format, ensure tables exist
     if "tables" not in data:
         data["tables"] = default_tables()
     else:
-        # fill missing tables
-        for i in range(1, 6):
-            key = str(i)
-            if key not in data["tables"]:
-                data["tables"][key] = {
-                    "pick_pose": DEFAULT_PICK_POSE,
-                    "place_pose": DEFAULT_PLACE_POSE,
-                    "safe_pick": DEFAULT_SAFE_PICK,
-                    "safe_place": DEFAULT_SAFE_PLACE
-                }
-            else:
-                # ensure all four poses exist for the table
-                tbl = data["tables"][key]
-                tbl.setdefault("pick_pose", DEFAULT_PICK_POSE)
-                tbl.setdefault("place_pose", DEFAULT_PLACE_POSE)
-                tbl.setdefault("safe_pick", DEFAULT_SAFE_PICK)
-                tbl.setdefault("safe_place", DEFAULT_SAFE_PLACE)
+        # No filling missing tables with defaults
+        pass
 
     # Ensure top-level params
     data.setdefault("num_boxes", DEFAULT_NUM_BOXES)
     data.setdefault("box_height", DEFAULT_BOX_HEIGHT)
     data.setdefault("approach_offset", DEFAULT_APPROACH_OFFSET)
+    data.setdefault("column_offset", DEFAULT_COLUMN_OFFSET)
     data.setdefault("vel", VEL)
     data.setdefault("vel_slow", VEL)
 
@@ -359,9 +338,21 @@ def set_pose_z(pose, z):
     p = copy.deepcopy(pose)
     p[2] = z
     return p
+def set_pose_y(pose, y):
+    p = copy.deepcopy(pose)
+    p[1] = y
+    return p
+def set_pose_x(pose, x):
+    p = copy.deepcopy(pose)
+    p[0] = x
+    return p
+def set_pose_y_z(pose, y, z):
+    p = copy.deepcopy(pose)
+    p[1] = y
+    p[2] = z
+    return p
 
-
-def pick_and_place_one(pick_base, place_base, safe_pick, safe_place, pick_z, place_z, approach_offset, vel_normal=None, vel_slow=None, status_callback=None):
+def pick_and_place_one(pick_base, place_base, safe_pick, safe_place, pick_z, place_z, place_y, push_start, push_end, approach_offset, vel_normal=None, vel_slow=None, status_callback=None):
     """Performs pick and place for a single box using safe waypoint poses.
     vel_normal: normal movement speed (default VEL)
     vel_slow: slow movement speed for fine approach (default VEL)
@@ -373,8 +364,11 @@ def pick_and_place_one(pick_base, place_base, safe_pick, safe_place, pick_z, pla
     vel_s = vel_slow if vel_slow is not None else VEL
 
     target_pick = set_pose_z(pick_base, pick_z)
-    target_place = set_pose_z(place_base, place_z)
-
+    target_place = set_pose_y_z(place_base, place_y, place_z)
+    push_s = set_pose_y_z(place_base, push_start, place_z)
+    push_e = set_pose_y_z(place_base, push_end, place_z)
+   # place_z = target_place[2]
+    approach_place = set_pose_z(target_place, place_z + approach_offset)
     # Move to safe pick position first
     if status_callback:
         status_callback("Moving to safe pick position...")
@@ -406,15 +400,38 @@ def pick_and_place_one(pick_base, place_base, safe_pick, safe_place, pick_z, pla
 
     # Approach and place (use slow speed for final approach)
     if status_callback:
+        status_callback("Approaching  place ...")
+    if not move_cart(approach_place, vel_s):
+        return False
+
+
+    if status_callback:
         status_callback("Approaching place position...")
     if not move_cart(target_place, vel_n):
         return False
-
     if status_callback:
         status_callback("Opening gripper...")
     open_gripper()
     time.sleep(0.15)
 
+    if status_callback:
+        status_callback("Approaching  place after place ...")
+    if not move_cart(approach_place, vel_s):
+        return False
+    #push start
+    if status_callback:
+        status_callback("Pushing box to align...")
+    if not move_cart(push_s, vel_s):
+        return False
+    #push end
+    if status_callback:
+        status_callback("Pushing box to align end...")  
+    if not move_cart(push_e, vel_s):
+        return False
+    if status_callback:
+        status_callback("Approaching  place after place ...")
+    if not move_cart(approach_place, vel_s):
+        return False
     # Return to safe place position
     if status_callback:
         status_callback("Returning to safe position...")
@@ -424,12 +441,12 @@ def pick_and_place_one(pick_base, place_base, safe_pick, safe_place, pick_z, pla
     return True
 
 
-def run_stacking_sequence(pick_pose, place_pose, safe_pick, safe_place, num_boxes, box_height, approach_offset, status_callback=None, vel_normal=None, vel_slow=None):
+def column_stacking_sequence(pick_pose, place_pose, safe_pick, safe_place, num_boxes, box_height, approach_offset, status_callback=None, vel_normal=None, vel_slow=None):
     """Run the stacking sequence in background -."""
     global stop_flag, pause_flag
 
     reset_flags()
-
+  
     for i in range(num_boxes):
         # Check for stop before each box
         if stop_flag:
@@ -444,13 +461,19 @@ def run_stacking_sequence(pick_pose, place_pose, safe_pick, safe_place, num_boxe
             time.sleep(0.2)
         
         pick_z = pick_pose[2] - i * box_height
-        place_z = place_pose[2] + i * box_height
+        if PUSH=='LEFT':
+            place_y = place_pose[1] - i * 80
+            push_start=place_y-150
+            push_end =place_y+100
+        else:
+            place_y = place_pose[1] + i * 80
+            push_start=place_y+150
+            push_end =place_y-100
 
         if status_callback:
             status_callback(f"\n--- Box {i+1}/{num_boxes} ---")
-            status_callback(f"Pick Z: {pick_z:.3f}  Place Z: {place_z:.3f}")
-
-        ok = pick_and_place_one(pick_pose, place_pose, safe_pick, safe_place, pick_z, place_z, approach_offset, vel_normal, vel_slow, status_callback)
+            status_callback(f"Pick Z: {pick_z:.3f}  Place Y: {place_y:.3f}")
+        ok = pick_and_place_one(pick_pose, place_pose, safe_pick, safe_place, pick_z, place_y, push_start, push_end, approach_offset, vel_normal, vel_slow, status_callback)
         if not ok:
             if status_callback:
                 status_callback("Pick-and-place aborted")
@@ -461,12 +484,61 @@ def run_stacking_sequence(pick_pose, place_pose, safe_pick, safe_place, num_boxe
     if status_callback:
         status_callback("Stacking sequence completed")
 
+#def column_stacking_sequence():  
+def run_stacking_sequence(pick_pose, place_pose, safe_pick, safe_place, num_boxes, box_height, approach_offset, status_callback=None, vel_normal=None, vel_slow=None, column_offset=None):
+    """Run the stacking sequence in background -."""
+    global stop_flag, pause_flag
 
-# ===== GUI Application =====
+    if column_offset is None:
+        column_offset = DEFAULT_COLUMN_OFFSET
+
+    reset_flags()
+    for j in range(2):
+        pick_x_offset = -j * column_offset
+        pick_pose_offset = set_pose_x(pick_pose, pick_pose[0] + pick_x_offset)
+        safe_pick_offset = set_pose_x(safe_pick, safe_pick[0] + pick_x_offset)
+        for i in range(num_boxes):
+            
+            if stop_flag:
+                if status_callback:
+                    status_callback("Operation stopped by user")
+                break
+
+            
+            while pause_flag and not stop_flag:
+                if status_callback:
+                    status_callback("Paused - waiting for resume...")
+                time.sleep(0.2)
+            
+            pick_z = pick_pose_offset[2] - i * box_height
+            place_z = place_pose[2] + j * box_height
+            if PUSH=='LEFT':
+                place_y = place_pose[1] - i * 74 +j*74 #+j*40
+                push_start=place_y-150
+                push_end =(place_y+37)-(j*74) 
+            else:
+                place_y = place_pose[1] + i * 80
+                push_start=place_y+150
+                push_end =place_y-100
+
+            if status_callback: 
+                status_callback(f"\n--- Box {i+1}/{num_boxes} ---") 
+                status_callback(f"Pick Z: {pick_z:.3f}  Place Y: {place_y:.3f}")
+            ok = pick_and_place_one(pick_pose_offset, place_pose, safe_pick_offset, safe_place, pick_z, place_z, place_y, push_start, push_end, approach_offset, vel_normal, vel_slow, status_callback)
+            if not ok:
+                if status_callback:
+                    status_callback("Pick-and-place aborted")
+                break
+
+            time.sleep(0.2)
+
+        if status_callback:
+            status_callback("Stacking sequence completed")
+# ===== GUI  =====
 class RobotGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Fairino Robot Control")
+        self.root.title("MSIS Robot Control")
         self.root.geometry("900x800")
 
         self.poses_data = load_poses()
@@ -561,11 +633,15 @@ class RobotGUI:
         self.offset_var = tk.DoubleVar(value=self.poses_data.get("approach_offset", DEFAULT_APPROACH_OFFSET))
         ttk.Entry(self.param_frame, textvariable=self.offset_var, width=10).grid(row=0, column=5, sticky=tk.W, padx=5)
 
+        ttk.Label(self.param_frame, text="Column Offset (mm):").grid(row=1, column=5, sticky=tk.W, padx=5)
+        self.column_offset_var = tk.DoubleVar(value=self.poses_data.get("column_offset", DEFAULT_COLUMN_OFFSET))
+        ttk.Entry(self.param_frame, textvariable=self.column_offset_var, width=10).grid(row=1, column=6, sticky=tk.W, padx=5)
+
         # Table selector (1-5)
-        ttk.Label(self.param_frame, text="Table:").grid(row=0, column=6, sticky=tk.W, padx=5)
+        ttk.Label(self.param_frame, text="Table:").grid(row=0, column=8, sticky=tk.W, padx=5)
         self.table_var = tk.StringVar(value="1")
         self.table_combo = ttk.Combobox(self.param_frame, textvariable=self.table_var, values=["1","2","3","4","5"], width=5, state="readonly")
-        self.table_combo.grid(row=0, column=7, sticky=tk.W, padx=5)
+        self.table_combo.grid(row=0, column=9, sticky=tk.W, padx=5)
 
         # Speed controls -  second row
         ttk.Label(self.param_frame, text="Normal Speed (vel):").grid(row=1, column=0, sticky=tk.W, padx=5)
@@ -712,6 +788,7 @@ class RobotGUI:
         self.log(f"Num Boxes: {self.poses_data.get('num_boxes')}")
         self.log(f"Box Height: {self.poses_data.get('box_height')}")
         self.log(f"Approach Offset: {self.poses_data.get('approach_offset')}")
+        self.log(f"Column Offset: {self.poses_data.get('column_offset')}")
         self.log(f"Normal Speed (vel): {self.poses_data.get('vel')}")
         self.log(f"Slow Speed (vel_slow): {self.poses_data.get('vel_slow')}")
 
@@ -721,6 +798,7 @@ class RobotGUI:
             self.poses_data["num_boxes"] = self.num_boxes_var.get()
             self.poses_data["box_height"] = self.box_height_var.get()
             self.poses_data["approach_offset"] = self.offset_var.get()
+            self.poses_data["column_offset"] = self.column_offset_var.get()
             self.poses_data["vel"] = self.vel_var.get()
             self.poses_data["vel_slow"] = self.vel_slow_var.get()
             
@@ -742,6 +820,7 @@ class RobotGUI:
             num_boxes = self.num_boxes_var.get()
             box_height = self.box_height_var.get()
             approach_offset = self.offset_var.get()
+            column_offset = self.column_offset_var.get()
             vel_normal = self.vel_var.get()
             vel_slow = self.vel_slow_var.get()
 
@@ -749,17 +828,21 @@ class RobotGUI:
             table = self.table_var.get() if hasattr(self, 'table_var') else '1'
             tables = self.poses_data.get('tables', {})
             tbl = tables.get(table, {})
-            pick_pose = tbl.get('pick_pose', DEFAULT_PICK_POSE)
-            place_pose = tbl.get('place_pose', DEFAULT_PLACE_POSE)
-            safe_pick = tbl.get('safe_pick', DEFAULT_SAFE_PICK)
-            safe_place = tbl.get('safe_place', DEFAULT_SAFE_PLACE)
+            pick_pose = tbl.get('pick_pose')
+            place_pose = tbl.get('place_pose')
+            safe_pick = tbl.get('safe_pick')
+            safe_place = tbl.get('safe_place')
+
+            if not pick_pose or not place_pose or not safe_pick or not safe_place:
+                messagebox.showerror("Error", f"Missing poses for table {table}. Please save all poses first.")
+                return
 
             self.log(f"Starting stacking: {num_boxes} boxes, height {box_height} mm")
             self.log(f"Speed: normal={vel_normal}, slow={vel_slow}")
 
             # Run in background thread
             def stacking_thread():
-                run_stacking_sequence(pick_pose, place_pose, safe_pick, safe_place, num_boxes, box_height, approach_offset, self.log, vel_normal, vel_slow)
+                run_stacking_sequence(pick_pose, place_pose, safe_pick, safe_place, num_boxes, box_height, approach_offset, self.log, vel_normal, vel_slow, column_offset)
 
             thread = threading.Thread(target=stacking_thread, daemon=True)
             thread.start()
@@ -807,12 +890,12 @@ class RobotGUI:
 
             AMR.set_speed_limit(0.2)
 
-        print("Start move the arm now")
-     #   Start move robot arm
-        if (go_home(cam_pose)):
-           self.log(f"✓ AMR moving to {point_name} position")
-        else:
-            self.log(f"✗ Failed to move to {point_name} position")
+            print("Start move the arm now")
+        #   Start move robot arm
+            if (go_home(cam_pose)):
+                self.log(f"✓ AMR moving to {point_name} position")
+            else:
+                self.log(f"✗ Failed to move to {point_name} position")
 
 if __name__ == "__main__":
     root = tk.Tk()

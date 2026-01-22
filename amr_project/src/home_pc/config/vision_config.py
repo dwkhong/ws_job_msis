@@ -6,7 +6,7 @@ Vision 시스템 설정
 # ============================================================
 # YOLO Model
 # ============================================================
-MODEL_PATH = "/ws_job_msis/amr_project/src/jetson_pc/model/model_obj/best_obj_20260120.pt"
+MODEL_PATH = "/ws_job_msis/amr_project/src/jetson_pc/model/model_obj/best_obj_20260121.pt"
 # MODEL_PATH = "/home/msis/ws_job_msis/amr_project/src/jetson_pc/model/model_obj/best_obj_20251218.engine"
 
 CONF_THRES = 0.85

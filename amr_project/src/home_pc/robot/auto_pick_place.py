@@ -115,9 +115,23 @@ class AutoPickPlace:
         if home_joint6 is None:
             return {"ok": False, "msg": "home_joint6 없음 (2번으로 홈 위치 저장 필요)"}
         
+        # 스택 위치 선택 (1~3개: 위치1, 4~6개: 위치2)
+        if self._stack_counter < cfg.STACK_POSITION_CHANGE_AT:
+            # 위치 1 사용
+            a_joint = cfg.WP11_A_JOINT
+            drop_base = cfg.WP11_DROP_BASE_POSE
+            stack_offset = self._stack_counter
+            position_name = "위치1"
+        else:
+            # 위치 2 사용
+            a_joint = cfg.WP11_B_A_JOINT
+            drop_base = cfg.WP11_B_DROP_BASE_POSE
+            stack_offset = self._stack_counter - cfg.STACK_POSITION_CHANGE_AT
+            position_name = "위치2"
+        
         # Drop 위치 계산 (스택 높이 반영)
-        drop = list(cfg.WP11_DROP_BASE_POSE)
-        drop[2] = float(drop[2]) + float(cfg.STACK_Z_STEP_MM) * self._stack_counter
+        drop = list(drop_base)
+        drop[2] = float(drop[2]) + float(cfg.STACK_Z_STEP_MM) * stack_offset
         
         # 높이 제한 체크
         if cfg.STACK_Z_MAX_MM is not None and float(drop[2]) > float(cfg.STACK_Z_MAX_MM):
@@ -127,11 +141,11 @@ class AutoPickPlace:
                 "drop": drop
             }
         
-        print(f"\n[PLACE] counter={self._stack_counter} dropZ={drop[2]:.1f}")
+        print(f"\n[PLACE] counter={self._stack_counter} {position_name} stack_offset={stack_offset} dropZ={drop[2]:.1f}")
         
         # 1) A 위치로 이동
         r = self.robot_motion.move_j(
-            joint_pos=cfg.WP11_A_JOINT,
+            joint_pos=a_joint,
             vel=cfg.MOVEJ_VEL_WP11,
             label="A",
             reconnect_cb=reconnect_cb
