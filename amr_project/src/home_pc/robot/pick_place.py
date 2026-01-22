@@ -149,14 +149,20 @@ class PickPlace:
         if not self.ik_checker.has_solution(target, joint_at_phase0, reconnect_cb=reconnect_cb):
             return {"ok": False, "msg": "Target IK 불가 (하강 경로 막힘)", "target": target}
         
-        print("[SMOOTH] 2) Target MoveCart (down)")
+        print("[SMOOTH] 2) Target MoveCart (down) - PRECISE")
         r = self.robot_motion.move_cart(
             target,
             label="target",
+            precise=True,  # 정밀 모드: Config의 PRECISE 속도 사용
             reconnect_cb=reconnect_cb
         )
         if int(r) != 0:
             return {"ok": False, "msg": f"Target 이동 실패 err={r}", "target": target}
+        
+        # 2.5) 그리퍼 동작 전 안정화 대기 (Config)
+        import time
+        from config import robot_config as cfg
+        time.sleep(cfg.GRIPPER_SETTLE_TIME)
         
         # 3) 그리퍼 닫기
         if auto_grip_close:

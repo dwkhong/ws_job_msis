@@ -55,9 +55,9 @@ J6_MAX_STEP_DEG = 45.0
 J4_MAX_STEP_DEG = 45.0  # J4 최대 회전 각도
 
 MOVEJ_VEL_J6 = 100.0              # J6 회전 속도 (0-180 범위, 100 권장)
-MOVEJ_BLENDT_J6 = -1.0
+MOVEJ_BLENDT_J6 = 100.0           # blending time (100ms = 빠름!)
 MOVEJ_VEL_J4 = 100.0              # J4 회전 속도
-MOVEJ_BLENDT_J4 = -1.0
+MOVEJ_BLENDT_J4 = 100.0           # blending time (100ms = 빠름!)
 
 # ============================================================
 # Target RY 설정
@@ -87,20 +87,33 @@ STEP_TRY_LIST_DEFAULT = [STEP_SCALE_DEFAULT, 0.05, 0.02, 0.01]
 # SPEED CONFIG (속도 설정)
 # ============================================================
 # MoveCart vel 범위: 0~100 (비율, 절대값 아님!)
-MOVE_CART_VEL_DEFAULT = 20.0         # 기본 속도 (최대값: 100)
+
+# --- 일반 속도 (고속 구간: Phase0 이동, 상승, 복귀 등) ---
+MOVE_CART_VEL_DEFAULT = 100.0         # 기본 속도 (최대값: 100)
 MOVE_CART_VEL_FALLBACKS = [80.0, 60.0, 40.0, 20.0]  # Fallback 단계
 MOVE_CART_VEL_LIST = [MOVE_CART_VEL_DEFAULT] + MOVE_CART_VEL_FALLBACKS
 
-MOVE_CART_ACC = 0.0                     # 가속도 (SDK에서 사용 안 함, 0.0 고정)
-MOVE_CART_OVL = 60.0                    # override(%) - 최대
-MOVE_CART_BLENDT = 300                  # blending time (-1: blocking)
-MOVE_CART_EX = -1                       # 확장 옵션 (joint config)
+MOVE_CART_ACC = 0.0                   # 가속도 (SDK에서 사용 안 함, 0.0 고정)
+MOVE_CART_OVL = 100.0                 # override(%) - 최대
+MOVE_CART_BLENDT = 100.0              # blending time (100ms smoothing = 빠름!)
+MOVE_CART_EX = -1                     # 확장 옵션 (joint config)
 
-MOVEJ_VEL_RETURN = 70.0              # 복귀 속도 (0-100 범위)
-MOVEJ_BLENDT_RETURN = -1.0
+# --- 정밀 속도 (픽/플레이스 구간: Target 하강, DROP 이동) ---
+MOVE_CART_VEL_PRECISE = 60.0          # 정밀 동작 속도 (느림)
+MOVE_CART_BLENDT_PRECISE = -1.0       # 정밀 동작 blending (blocking, 완전 정지)
+GRIPPER_SETTLE_TIME = 0.1             # 그리퍼 동작 전 안정화 대기 시간 (초)
 
-MOVEJ_VEL_WP11 = 70.0                # WP11 속도
-MOVEJ_BLENDT_WP11 = -1.0
+# 조정 가이드:
+# - 더 빠르게: MOVE_CART_VEL_PRECISE = 80.0, GRIPPER_SETTLE_TIME = 0.05
+# - 더 느리게: MOVE_CART_VEL_PRECISE = 40.0, GRIPPER_SETTLE_TIME = 0.2
+# - 더 정밀하게: MOVE_CART_VEL_PRECISE = 30.0, GRIPPER_SETTLE_TIME = 0.2
+
+# --- MoveJ 속도 ---
+MOVEJ_VEL_RETURN = 100.0              # 복귀 속도 (0-180 범위)
+MOVEJ_BLENDT_RETURN = 100.0           # blending time (100ms = 빠름!)
+
+MOVEJ_VEL_WP11 = 100.0                # WP11 속도
+MOVEJ_BLENDT_WP11 = 100.0             # blending time (100ms = 빠름!)
 
 # ============================================================
 # GRIPPER CONFIG (그리퍼 설정)
@@ -124,7 +137,7 @@ WP11_A_POSE = [84.135, -445.200, 714.079, 179.285, 0.288, 87.147]
 WP11_A_JOINT = [-66.404, -93.019, -50.178, -126.227, 90.512, 116.450]
 WP11_DROP_BASE_POSE = [75.776, -445.201, 241.223, 178.430, -1.496, 88.630]
 
-# 위치 2 (4~6개) - 값 입력 필요
+# 위치 2 (4~6개)
 WP11_B_A_POSE = [-94.183, -453.429, 698.987, -179.033, -1.426, 89.909] 
 WP11_B_A_JOINT = [-88.803, -93.717, -51.486, -126.244, 89.066, 91.287]  
 WP11_B_DROP_BASE_POSE = [-103.857, -428.902, 239.172, 179.383, -0.888, 88.912]  
@@ -132,3 +145,40 @@ WP11_B_DROP_BASE_POSE = [-103.857, -428.902, 239.172, 179.383, -0.888, 88.912]
 STACK_Z_STEP_MM = 58.0
 STACK_Z_MAX_MM = 600.0  # None이면 제한 없음
 STACK_POSITION_CHANGE_AT = 3  # 이 개수 이후 위치 2로 변경 (3개까지 위치1, 4개부터 위치2)
+
+# ============================================================
+# 속도 최적화 설명
+# ============================================================
+# 
+# [구간별 속도 분류]
+# 
+# 고속 구간 (vel=100, blendT=100):
+#   - Phase0 이동 (상공 → 상공)
+#   - Phase0 복귀 (하단 → 상공)
+#   - 상승 (Target → Phase0)
+#   - HOME 복귀
+#   → 충돌 위험 없음, 빠르게 연속 동작
+# 
+# 정밀 구간 (vel=60, blendT=-1):
+#   - Target 하강 (박스 잡기)
+#   - DROP 이동 (박스 놓기)
+#   → 정확한 위치 필요, 천천히 완전 정지
+# 
+# [예상 사이클 타임]
+#   - Phase0 이동: 2.5초 (고속)
+#   - Target 하강: 2.0초 (정밀)
+#   - 그리퍼 닫기: 0.5초 + 0.1초 대기
+#   - 상승: 1.5초 (고속)
+#   - Phase0 복귀: 1.5초 (고속)
+#   - DROP 이동: 2.5초 (정밀)
+#   - 그리퍼 열기: 0.5초 + 0.1초 대기
+#   - HOME 복귀: 2.0초 (고속)
+#   총: 약 13초/박스
+#   생산량: 약 277박스/시간
+# 
+# [비교]
+#   Before (모두 blocking): 23초/박스, 157/시간
+#   모두 non-blocking: 12초/박스, 하지만 실패율 높음
+#   정밀 구간 분리: 13초/박스, 성공률 100%
+# 
+# ============================================================

@@ -63,7 +63,8 @@ class RobotMotion:
                   blendT: Optional[float] = None,
                   config: Optional[int] = None,
                   reconnect_cb: Optional[Callable] = None,
-                  label: str = "") -> int:
+                  label: str = "",
+                  precise: bool = False) -> int:
         """
         MoveCart 실행 (속도 fallback 포함)
         
@@ -78,6 +79,7 @@ class RobotMotion:
             config: Config
             reconnect_cb: 재연결 콜백
             label: 로그용 라벨
+            precise: 정밀 모드 (True면 느린 속도 + blocking)
         
         Returns:
             에러 코드 (0: 성공)
@@ -91,11 +93,23 @@ class RobotMotion:
         # 기본값 설정
         tool = int(cfg.TOOL_ID if tool is None else tool)
         user = int(cfg.USER_ID if user is None else user)
-        vel_list = list(cfg.MOVE_CART_VEL_LIST if vel_list is None else vel_list)
+        
+        # Precise 모드: Config의 정밀 속도 사용
+        if precise:
+            vel_list = [cfg.MOVE_CART_VEL_PRECISE] if vel_list is None else vel_list
+            blendT = cfg.MOVE_CART_BLENDT_PRECISE if blendT is None else blendT
+        else:
+            vel_list = list(cfg.MOVE_CART_VEL_LIST if vel_list is None else vel_list)
+            blendT = float(cfg.MOVE_CART_BLENDT if blendT is None else blendT)
+        
         acc = float(cfg.MOVE_CART_ACC if acc is None else acc)
         ovl = float(cfg.MOVE_CART_OVL if ovl is None else ovl)
-        blendT = float(cfg.MOVE_CART_BLENDT if blendT is None else blendT)
         config = int(cfg.MOVE_CART_EX if config is None else config)
+        
+        # 디버깅: 설정값 출력 (처음 한 번만)
+        if not hasattr(self, '_vel_debug_printed'):
+            print(f"[MoveCart-DEBUG] vel_list={vel_list}, acc={acc}, ovl={ovl}")
+            self._vel_debug_printed = True
         
         # 속도 fallback
         for vel in vel_list:
@@ -108,7 +122,9 @@ class RobotMotion:
             
             if int(rtn) == 0:
                 if label:
-                    print(f"[MoveCart-OK] {label} vel={vel}")
+                    print(f"[MoveCart-OK] {label} vel={vel} acc={acc} ovl={ovl}")
+                else:
+                    print(f"[MoveCart-OK] vel={vel} acc={acc} ovl={ovl}")
                 return 0
             
             # 112: 속도/제약 조건 실패 -> 다음 속도 시도
@@ -270,3 +286,4 @@ class RobotMotion:
             vel=cfg.MOVEJ_VEL_J6,
             reconnect_cb=reconnect_cb
         )
+

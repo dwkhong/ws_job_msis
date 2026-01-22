@@ -153,14 +153,18 @@ class AutoPickPlace:
         if int(r) != 0:
             return {"ok": False, "msg": f"MoveJ(A) err={r}"}
         
-        # 2) DROP 위치로 이동
+        # 2) DROP 위치로 이동 (정밀)
         r = self.robot_motion.move_cart(
             pose6=drop,
             label="DROP",
+            precise=True,  # 정밀 모드: Config의 PRECISE 속도 사용
             reconnect_cb=reconnect_cb
         )
         if int(r) != 0:
             return {"ok": False, "msg": f"MoveCart(DROP) err={r}", "drop": drop}
+        
+        # 2.5) 그리퍼 동작 전 안정화 대기 (Config)
+        time.sleep(cfg.GRIPPER_SETTLE_TIME)
         
         # 3) 그리퍼 열기 (놓기)
         try:
@@ -234,7 +238,7 @@ class AutoPickPlace:
                 print("[13] ❌ Vision 시작 실패")
                 return {"ok": False, "msg": "vision start failed"}
             print("[13] ✅ Vision 시작 완료")
-            time.sleep(1.0)  # 카메라 안정화 대기
+            time.sleep(0.3)  # 카메라 안정화 대기 (1.0 → 0.3초)
         else:
             print("[13] ✅ Vision 이미 실행 중")
         
@@ -298,7 +302,7 @@ class AutoPickPlace:
                 print(f"[13] Cycle {i+1}: 측정 중...")
                 self.set_vision_allow_restart(True)
                 meas = self.box_detector.cmd_measure_avg()
-                time.sleep(0.05)
+                # time.sleep(0.05)  제거 - 불필요
                 
                 if meas is None:
                     print(f"[13] ❌ Cycle {i+1}: 측정 실패")
@@ -463,7 +467,7 @@ class AutoPickPlace:
                 print("[12] Step3: measure_avg")
                 self.set_vision_allow_restart(True)
                 meas = self.box_detector.cmd_measure_avg()
-                time.sleep(0.05)
+                # time.sleep(0.05)  제거 - 불필요
                 
                 if meas is None:
                     print("[12] measure_avg 실패")
