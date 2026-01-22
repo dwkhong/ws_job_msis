@@ -832,20 +832,22 @@ class BoxDetector:
     def _init_aruco(self):
         """ArUco 감지기 초기화"""
         try:
-            # ArUco 딕셔너리 설정
-            dict_type = getattr(cv2.aruco, cfg.ARUCO_DICT_TYPE, cv2.aruco.DICT_4X4_50)
-            self._aruco_dict = cv2.aruco.getPredefinedDictionary(dict_type)
+            # ArUco 딕셔너리 설정 (test 코드와 동일하게)
+            self._aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
             
             # DetectorParameters 생성 (OpenCV 버전 호환)
             try:
                 # OpenCV 4.7.0 이상
                 self._aruco_params = cv2.aruco.DetectorParameters()
+                print("[ArUco] DetectorParameters() 사용")
             except:
                 # 이전 버전
                 self._aruco_params = cv2.aruco.DetectorParameters_create()
+                print("[ArUco] DetectorParameters_create() 사용")
             
-            print(f"[ArUco] Initialized with {cfg.ARUCO_DICT_TYPE}")
-            print(f"[ArUco] Dictionary type: {dict_type}")
+            print(f"[ArUco] Initialized with DICT_4X4_50")
+            print(f"[ArUco] Dictionary object: {self._aruco_dict}")
+            print(f"[ArUco] Parameters object: {self._aruco_params}")
             
         except Exception as e:
             print(f"[ArUco] Initialization failed: {e}")
