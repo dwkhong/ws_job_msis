@@ -90,8 +90,15 @@ def detect_aruco_markers(color_image, depth_image, aruco_dict, aruco_params):
         if ids is None or len(ids) == 0:
             return {}
         
-        # 각 마커 처리
+        # 각 마커 처리 (config에 설정된 마커만)
+        marker_baselines = getattr(cfg, 'ARUCO_MARKER_BASELINES', {1: 560.0, 2: 750.0, 3: 1000.0})
+        valid_marker_ids = list(marker_baselines.keys())
+        
         for i, marker_id in enumerate(ids.flatten()):
+            # config에 설정된 마커만 처리
+            if marker_id not in valid_marker_ids:
+                continue
+            
             marker_corners = corners[i][0]  # shape: (4, 2)
             
             # 마커 중심 계산
@@ -134,13 +141,15 @@ def detect_aruco_markers(color_image, depth_image, aruco_dict, aruco_params):
         return {}
 
 
-def get_baseline_from_markers(markers, current_table="1"):
+def get_baseline_from_markers(markers, current_table=None):
     """
-    마커로부터 BASELINE 계산
+    ArUco 마커로부터 BASELINE 결정
+    
+    마커 ID에 따라 vision_config.ARUCO_MARKER_BASELINES에서 값 가져옴
     
     Args:
         markers: detect_aruco_markers 결과
-        current_table: 현재 테이블 번호
+        current_table: 현재 테이블 번호 (사용 안 함)
     
     Returns:
         float or None: BASELINE (mm), 마커 없으면 None
@@ -148,24 +157,28 @@ def get_baseline_from_markers(markers, current_table="1"):
     if not markers:
         return None
     
-    # 현재 테이블의 마커 ID 가져오기
-    table_marker_ids = getattr(cfg, 'TABLE_MARKER_IDS', {"1": 1, "2": 2})
-    table_marker_id = table_marker_ids.get(current_table)
-    if table_marker_id is None:
+    # Config에서 마커별 BASELINE 가져오기
+    marker_baselines = getattr(cfg, 'ARUCO_MARKER_BASELINES', {
+        1: 560.0,
+        2: 750.0,
+        3: 1000.0
+    })
+    
+    # 마커 ID 확인
+    marker_ids = list(markers.keys())
+    
+    # BASELINE이 설정된 마커만 필터링
+    valid_markers = [mid for mid in marker_ids if mid in marker_baselines]
+    
+    if not valid_markers:
+        print(f"[ArUco] 마커 {marker_ids} 감지되었으나 설정된 마커 없음 (무시)")
         return None
     
-    # 해당 ID의 마커만 필터링
-    target_markers = [m for mid, m in markers.items() if mid == table_marker_id]
+    # 가장 큰 ID (우선순위: 숫자가 클수록 높음)
+    selected_id = max(valid_markers)
+    baseline_mm = marker_baselines[selected_id]
     
-    min_markers = getattr(cfg, 'ARUCO_MIN_MARKERS', 1)
-    if len(target_markers) < min_markers:
-        return None
-    
-    # 모든 마커의 평균 Depth 계산
-    depths = [m['depth_m'] for m in target_markers]
-    baseline_m = float(np.mean(depths))
-    baseline_mm = baseline_m * 1000.0
-    
+    print(f"[ArUco] 마커 {selected_id}번 감지 → BASELINE={baseline_mm}mm")
     return baseline_mm
 
 

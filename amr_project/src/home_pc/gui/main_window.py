@@ -738,11 +738,12 @@ class RobotGUI:
 
                     self.amr.set_speed_limit(0.2)
 
-                self.log(f"[AMR] Arrived at {point_name}")
+                if point_name == "Table1":
+                    self.log(f"[AMR] Arrived at {point_name}")
 
-                self.log("[AMR] Moving robot arm to camera pose...")
-                self.robot_motion.move_cart(gui_config.CAM_POSE)
-                self.log("Robot arm ready")
+                    self.log("[AMR] Moving robot arm to camera pose...")
+                    self.robot_motion.move_cart(gui_config.CAM_POSE)
+                    self.log("Robot arm ready")
 
             except Exception as e:
                 self.log(f"[AMR] Error: {e}")

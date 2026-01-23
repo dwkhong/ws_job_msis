@@ -132,9 +132,10 @@ class PickPlace:
         if not self.ik_checker.has_solution(phase0, cur_joint, reconnect_cb=reconnect_cb):
             return {"ok": False, "msg": "Phase0 IK 불가", "phase0": phase0}
         
-        print("\n[SMOOTH] 1) Phase0 MoveCart")
+        print("\n[SMOOTH] 1) Phase0 MoveCart (⚡ 빠른 속도)")
         r = self.robot_motion.move_cart(
             phase0,
+            vel_list=cfg.MOVE_CART_VEL_PHASE0,  # ⚡ 빠른 속도 (90, 70, 50, 30)
             label="phase0",
             reconnect_cb=reconnect_cb
         )
@@ -149,25 +150,26 @@ class PickPlace:
         if not self.ik_checker.has_solution(target, joint_at_phase0, reconnect_cb=reconnect_cb):
             return {"ok": False, "msg": "Target IK 불가 (하강 경로 막힘)", "target": target}
         
-        print("[SMOOTH] 2) Target MoveCart (down) - PRECISE")
+        print("[SMOOTH] 2) Target MoveCart (🎯 천천히 정밀)")
         r = self.robot_motion.move_cart(
             target,
+            vel_list=cfg.MOVE_CART_VEL_TARGET,  # 🎯 느린 속도 (40, 30, 20)
             label="target",
-            precise=True,  # 정밀 모드: Config의 PRECISE 속도 사용
             reconnect_cb=reconnect_cb
         )
         if int(r) != 0:
             return {"ok": False, "msg": f"Target 이동 실패 err={r}", "target": target}
         
-        # 2.5) 그리퍼 동작 전 안정화 대기 (Config)
-        import time
-        from config import robot_config as cfg
-        time.sleep(cfg.GRIPPER_SETTLE_TIME)
-        
         # 3) 그리퍼 닫기
         if auto_grip_close:
             print("[SMOOTH] 3) Gripper close")
             self.gripper.close(reconnect_cb=reconnect_cb)
+            
+            # 그리퍼 안정화 대기 (박스가 제대로 잡히도록)
+            import time
+            settle_time = cfg.GRIPPER_SETTLE_TIME_CLOSE
+            print(f"[SMOOTH] 3-1) Gripper settle wait {settle_time}s...")
+            time.sleep(settle_time)
         
         # 4) 완료 상태
         (e_end_p, pose_end), (e_end_j, joint_end) = self.robot_state.read_pose_joint(reconnect_cb=reconnect_cb)

@@ -50,6 +50,98 @@ class AutoPickPlace:
     # -------------------------
     # 유틸리티
     # -------------------------
+    def rotate_vertical_box_and_place(self, home_joint6, reconnect_cb: Optional[Callable] = None) -> Dict[str, Any]:
+        """
+        세로 박스 회전 (J5 기울이기 방식)
+        1) 그리퍼 추가로 조이기 (25 → 18)
+        2) J5 회전 (박스 기울이기)
+        3) 그리퍼 열기
+        4) 박스가 자동으로 눕게 됨
+        5) HOME 복귀
+        
+        Args:
+            home_joint6: Home joint 위치
+            reconnect_cb: 재연결 콜백
+        
+        Returns:
+            결과 딕셔너리
+        """
+        print("\n[ROTATE] 세로 박스 회전 시작 (J5 기울이기)")
+        
+        # 1) 그리퍼 추가로 조이기 (25 → cfg.GRIP_VERTICAL_CLOSE_POS)
+        print(f"[ROTATE] Step 1: 그리퍼 추가 조이기 (25 → {cfg.GRIP_VERTICAL_CLOSE_POS})")
+        try:
+            err = self.gripper.move(
+                pos=cfg.GRIP_VERTICAL_CLOSE_POS,
+                reconnect_cb=reconnect_cb
+            )
+            if int(err) != 0:
+                return {"ok": False, "msg": f"gripper move failed: err={err}"}
+            
+            time.sleep(cfg.GRIPPER_SETTLE_TIME_VERTICAL)  # 안정화
+            print(f"[ROTATE] ✅ 그리퍼 {cfg.GRIP_VERTICAL_CLOSE_POS}로 조임 완료")
+        except Exception as e:
+            return {"ok": False, "msg": f"gripper tighten failed: {e}"}
+        
+        # 2) 현재 Joint 읽기
+        (e, pose), (e_j, joint) = self.robot_state.read_pose_joint(reconnect_cb)
+        if e_j != 0 or joint is None:
+            return {"ok": False, "msg": "read joint failed"}
+        
+        # 3) J5 회전 (박스 기울이기)
+        print("[ROTATE] Step 2: J5 회전 (박스 기울이기)")
+        
+        # J5 회전 (config에서 가져오기)
+        j5_rotate_angle = cfg.J5_VERTICAL_ROTATE_ANGLE
+        target_j5 = joint[4] + j5_rotate_angle
+        
+        # 각도 정규화 (-180 ~ 180)
+        if target_j5 > 180:
+            target_j5 -= 360
+        elif target_j5 < -180:
+            target_j5 += 360
+        
+        # J5 회전 실행
+        new_joint = joint.copy()
+        new_joint[4] = target_j5
+        
+        r = self.robot_motion.move_j(
+            joint_pos=new_joint,
+            vel=cfg.MOVEJ_VEL_J4,
+            blendT=cfg.MOVEJ_BLENDT_J4,
+            label="tilt_box",
+            reconnect_cb=reconnect_cb
+        )
+        
+        if int(r) != 0:
+            print(f"[ROTATE] ❌ J5 회전 실패 err={r}")
+            return {"ok": False, "msg": f"j5 rotate failed err={r}"}
+        
+        print(f"[ROTATE] ✅ J5 회전 완료 (박스 기울어짐, 각도={j5_rotate_angle}도)")
+        time.sleep(cfg.J5_VERTICAL_SETTLE_TIME)  # 박스 안정화
+        
+        # 4) 그리퍼 열기 (박스가 자동으로 눕게 됨)
+        print("[ROTATE] Step 3: 그리퍼 열기 (박스 자동 낙하)")
+        try:
+            self.gripper.open(reconnect_cb=reconnect_cb)
+            time.sleep(cfg.GRIPPER_SETTLE_TIME_OPEN)
+            print("[ROTATE] ✅ 그리퍼 열기 완료 (박스 눕혀짐)")
+        except Exception as e:
+            return {"ok": False, "msg": f"gripper open failed: {e}"}
+        
+        # 5) HOME 복귀
+        print("[ROTATE] Step 4: HOME 복귀")
+        r = self.robot_motion.move_j(
+            joint_pos=home_joint6,
+            label="HOME after tilt",
+            reconnect_cb=reconnect_cb
+        )
+        if int(r) != 0:
+            return {"ok": False, "msg": f"home failed err={r}"}
+        
+        print("[ROTATE] ✅ 세로 박스 회전 완료 (박스가 눕혀짐)")
+        return {"ok": True, "msg": "rotate done (box laid down)"}
+    
     def get_stack_counter(self) -> int:
         """스택 카운터 반환"""
         return self._stack_counter
@@ -146,36 +238,40 @@ class AutoPickPlace:
         # 1) A 위치로 이동
         r = self.robot_motion.move_j(
             joint_pos=a_joint,
-            vel=cfg.MOVEJ_VEL_WP11,
             label="A",
             reconnect_cb=reconnect_cb
         )
         if int(r) != 0:
             return {"ok": False, "msg": f"MoveJ(A) err={r}"}
         
-        # 2) DROP 위치로 이동 (정밀)
+        # 2) DROP 위치로 이동 (Blocking - 완전히 도착 후 다음 동작)
+        print(f"[PLACE] 2) DROP MoveCart (⚙️ 중간 속도, Blocking)")
         r = self.robot_motion.move_cart(
             pose6=drop,
+            vel_list=cfg.MOVE_CART_VEL_PLACE,  # ⚙️ 중간 속도 (60, 40, 20)
+            blendT=-1.0,  # 🔒 Blocking: 완전히 정지 후 다음 명령 실행
             label="DROP",
-            precise=True,  # 정밀 모드: Config의 PRECISE 속도 사용
             reconnect_cb=reconnect_cb
         )
         if int(r) != 0:
             return {"ok": False, "msg": f"MoveCart(DROP) err={r}", "drop": drop}
         
-        # 2.5) 그리퍼 동작 전 안정화 대기 (Config)
-        time.sleep(cfg.GRIPPER_SETTLE_TIME)
-        
         # 3) 그리퍼 열기 (놓기)
+        print("[PLACE] 3) Gripper OPEN")
         try:
             self.gripper.open(reconnect_cb=reconnect_cb)
+            
+            # 그리퍼 안정화 대기 (박스가 완전히 놓이도록)
+            import time
+            settle_time = cfg.GRIPPER_SETTLE_TIME_OPEN
+            print(f"[PLACE] 3-1) Gripper settle wait {settle_time}s...")
+            time.sleep(settle_time)
         except Exception as e:
             return {"ok": False, "msg": f"gripper_open failed: {e}", "drop": drop}
         
         # 4) A 위치로 복귀
         r = self.robot_motion.move_j(
-            joint_pos=cfg.WP11_A_JOINT,
-            vel=cfg.MOVEJ_VEL_WP11,
+            joint_pos=a_joint,  # ✅ 수정: 현재 사용한 A 위치로 복귀 (위치1 또는 위치2)
             label="A back",
             reconnect_cb=reconnect_cb
         )
@@ -185,7 +281,6 @@ class AutoPickPlace:
         # 5) HOME으로 복귀
         r = self.robot_motion.move_j(
             joint_pos=home_joint6,
-            vel=cfg.MOVEJ_VEL_RETURN,
             label="HOME",
             reconnect_cb=reconnect_cb
         )
@@ -339,6 +434,47 @@ class AutoPickPlace:
                 if not out_pick.get("ok", False):
                     print(f"[13] ❌ Cycle {i+1}: PICK FAIL:", out_pick.get("msg", ""))
                     return {"ok": False, "msg": "pick fail", "cycle": i+1, "completed": i, "detail": out_pick}
+                
+                # 6-1) 세로 박스 확인 및 즉시 처리
+                is_vertical = False
+                last_meas = self.box_detector.get_last_measure_avg()
+                if last_meas is not None and last_meas.get("is_vertical", False):
+                    is_vertical = True
+                    print(f"[13] 🔄 Cycle {i+1}: 세로 박스 감지! 즉시 회전 처리")
+                    
+                    # 바로 회전 처리
+                    out_rotate = self.rotate_vertical_box_and_place(
+                        home_joint6=home_joint6,
+                        reconnect_cb=reconnect_cb
+                    )
+                    if not out_rotate.get("ok", False):
+                        print(f"[13] ❌ Cycle {i+1}: ROTATE FAIL:", out_rotate.get("msg", ""))
+                        return {"ok": False, "msg": "rotate fail", "cycle": i+1, "completed": i, "detail": out_rotate}
+                    
+                    # 재측정
+                    self.set_vision_allow_restart(True)
+                    meas2 = self.box_detector.cmd_measure_avg()
+                    if meas2 is None:
+                        print(f"[13] ❌ Cycle {i+1}: 재측정 실패")
+                        return {"ok": False, "msg": "remeasure fail", "cycle": i+1, "completed": i}
+                    
+                    self.set_vision_allow_restart(False)
+                    
+                    # 재계산
+                    self.target_pose.cmd_build_target_from_last(
+                        use_last_pose=True,
+                        reconnect_cb=reconnect_cb
+                    )
+                    self.ik_checker.cmd_check_target_from_last(
+                        check_phase0=True,
+                        reconnect_cb=reconnect_cb
+                    )
+                    
+                    # 재잡기
+                    out_pick2 = self.pick_place.cmd6_smooth_auto(reconnect_cb=reconnect_cb)
+                    if not out_pick2.get("ok", False):
+                        print(f"[13] ❌ Cycle {i+1}: RE-PICK FAIL:", out_pick2.get("msg", ""))
+                        return {"ok": False, "msg": "re-pick fail", "cycle": i+1, "completed": i, "detail": out_pick2}
                 
                 # 7) HOME only (carry)
                 print(f"[13] Cycle {i+1}: Home으로 이동 중...")
@@ -504,6 +640,48 @@ class AutoPickPlace:
                 if not out_pick.get("ok", False):
                     print("[12] PICK FAIL:", out_pick.get("msg", ""))
                     return {"ok": False, "msg": "pick fail", "cycle": i+1, "detail": out_pick}
+                
+                # 6-1) 세로 박스 확인 및 즉시 처리
+                is_vertical = False
+                last_meas = self.box_detector.get_last_measure_avg()
+                if last_meas is not None and last_meas.get("is_vertical", False):
+                    is_vertical = True
+                    print("[12] 🔄 세로 박스 감지! 즉시 회전 처리")
+                    
+                    # 바로 회전 처리 (HOME 가기 전에)
+                    out_rotate = self.rotate_vertical_box_and_place(
+                        home_joint6=home_joint6,
+                        reconnect_cb=reconnect_cb
+                    )
+                    if not out_rotate.get("ok", False):
+                        print("[12] ROTATE FAIL:", out_rotate.get("msg", ""))
+                        return {"ok": False, "msg": "rotate fail", "cycle": i+1, "detail": out_rotate}
+                    
+                    print("[12] 재측정 및 재잡기 시작")
+                    # 재측정
+                    self.set_vision_allow_restart(True)
+                    meas2 = self.box_detector.cmd_measure_avg()
+                    if meas2 is None:
+                        print("[12] 재측정 실패")
+                        return {"ok": False, "msg": "remeasure fail", "cycle": i+1}
+                    
+                    self.set_vision_allow_restart(False)
+                    
+                    # 재계산
+                    self.target_pose.cmd_build_target_from_last(
+                        use_last_pose=True,
+                        reconnect_cb=reconnect_cb
+                    )
+                    self.ik_checker.cmd_check_target_from_last(
+                        check_phase0=True,
+                        reconnect_cb=reconnect_cb
+                    )
+                    
+                    # 재잡기
+                    out_pick2 = self.pick_place.cmd6_smooth_auto(reconnect_cb=reconnect_cb)
+                    if not out_pick2.get("ok", False):
+                        print("[12] RE-PICK FAIL:", out_pick2.get("msg", ""))
+                        return {"ok": False, "msg": "re-pick fail", "cycle": i+1, "detail": out_pick2}
                 
                 # 7) HOME only (carry)
                 print("[12] Step7: HOME only (carry box)")

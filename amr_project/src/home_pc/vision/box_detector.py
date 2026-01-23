@@ -236,24 +236,31 @@ class BoxDetector:
         if len(samples) < n:
             print(f"[Vision] 경고: 목표 {n}개 중 {len(samples)}개만 수집됨")
         
-        # 평균 계산
+        # 배열 생성
         arr = np.array(
             [[s["move_x_mm"], s["move_y_mm"], s["move_z_mm"], s["angle_deg"]] 
              for s in samples],
             dtype=np.float32,
         )
+        
+        # 평균 계산 (필터링/스냅 없이 원본 평균만)
         m = np.mean(arr, axis=0)
+        
+        # is_vertical 정보 (샘플 중 하나라도 있으면 True)
+        is_vertical = any(s.get("is_vertical", False) for s in samples)
         
         result = {
             "move_x_mm": float(m[0]),
             "move_y_mm": float(m[1]),
             "move_z_mm": float(m[2]),
             "angle_deg": float(m[3]),
+            "is_vertical": is_vertical,  # 세로 박스 여부
         }
         
         print(f"[Vision] 측정 완료: "
               f"XYZ=({result['move_x_mm']:.1f}, {result['move_y_mm']:.1f}, "
-              f"{result['move_z_mm']:.1f}mm), angle={result['angle_deg']:.1f}°")
+              f"{result['move_z_mm']:.1f}mm), angle={result['angle_deg']:.1f}°"
+              f"{' [VERTICAL]' if is_vertical else ''}")
         
         return result
     
@@ -560,37 +567,72 @@ class BoxDetector:
                             
                             # 유효성 검사
                             if z_m > 0 and count > min_roi_pixels and (mad <= mad_thres_m):
+                                # 박스 크기 계산 (OBB의 너비와 높이)
+                                box_width = float(np.linalg.norm(poly[0] - poly[1]))  # 픽셀
+                                box_height = float(np.linalg.norm(poly[1] - poly[2]))  # 픽셀
+                                
+                                # 종횡비 계산 (세로 박스 감지용)
+                                longer_side = max(box_width, box_height)
+                                shorter_side = min(box_width, box_height)
+                                aspect_ratio = longer_side / shorter_side if shorter_side > 0 else 999
+                                
+                                # 세로 박스 판단
+                                max_aspect_ratio = float(getattr(cfg, "MAX_ASPECT_RATIO", 4.5))
+                                is_vertical = aspect_ratio > max_aspect_ratio
+                                
+                                if is_vertical:
+                                    # 세로 박스 감지 로그
+                                    if not hasattr(self, '_last_vertical_count'):
+                                        self._last_vertical_count = 0
+                                    self._last_vertical_count += 1
+                                    
+                                    if self._last_vertical_count == 1 or self._last_vertical_count % 10 == 0:
+                                        print(f"[VERTICAL] 세로 박스 감지 (누적: {self._last_vertical_count}개): "
+                                              f"aspect_ratio={aspect_ratio:.2f}")
+                                
                                 cx = float(np.mean(poly[:, 0]))
                                 cy = float(np.mean(poly[:, 1]))
                                 dist_from_center = float(
                                     np.sqrt((cx - IMG_CENTER_X) ** 2 + (cy - IMG_CENTER_Y) ** 2)
                                 )
                                 angle = obb_angle_deg_upright0_rightplus(poly)
+                                angle = obb_angle_deg_upright0_rightplus(poly)
                                 
                                 # 각 OBB의 스택 개수 계산
                                 stack_for_this = 0
+                                
                                 if bool(getattr(cfg, "ENABLE_STACK_COUNTING", False)):
                                     box_h = float(getattr(cfg, "BOX_HEIGHT_MM", 58.0))
                                     depth_mm = float(z_m * 1000.0)
                                     
-                                    # ArUco 마커 BASELINE 우선 사용 (활성화되어 있고 감지된 경우만)
-                                    if cfg.ENABLE_ARUCO and cfg.ARUCO_BASELINE_PRIORITY and aruco_baseline_mm is not None:
-                                        baseline_mm = aruco_baseline_mm
-                                        height_from_baseline = baseline_mm - depth_mm
-                                        stack_for_this = max(0, int(round(height_from_baseline / box_h)))
+                                    # ArUco 마커 BASELINE 최우선 사용 (1번→560mm, 2번→850mm, 3번→1000mm)
+                                    if cfg.ENABLE_ARUCO and aruco_baseline_mm is not None:
+                                        baseline = aruco_baseline_mm
+                                        depth_diff = baseline - depth_mm
+                                        stack_for_this = int((depth_diff + box_h / 2) / box_h)
+                                        stack_for_this = max(0, min(stack_for_this, int(getattr(cfg, "STACK_COUNT_MAX", 10))))
+                                        
+                                        # 변화가 있을 때만 로그
+                                        if not hasattr(self, '_last_stack_info'):
+                                            self._last_stack_info = None
+                                        current_info = (baseline, stack_for_this)
+                                        if current_info != self._last_stack_info:
+                                            print(f"[STACK-ARUCO] BASELINE={baseline}mm → {stack_for_this}개")
+                                            self._last_stack_info = current_info
                                     
-                                    # 다중 테이블 높이 지원 (기본 방식)
+                                    # 다중 테이블 높이 지원 (ArUco 없을 때 Fallback)
                                     elif bool(getattr(cfg, "USE_MULTI_BASELINE", False)):
                                         baseline_low = float(getattr(cfg, "BASELINE_DEPTH_LOW_MM", 560.0))
                                         baseline_high = float(getattr(cfg, "BASELINE_DEPTH_HIGH_MM", 750.0))
+                                        baseline_very_high = float(getattr(cfg, "BASELINE_DEPTH_VERY_HIGH_MM", 1000.0))
                                         
                                         # OBB 주변 바닥 Depth 측정
                                         surrounding_depth_mm = None
                                         try:
-                                            # poly를 바깥쪽으로 확장 (30px)
+                                            # poly를 바깥쪽으로 확장 (1.8배로 더 넓게)
                                             poly_np = np.array(poly, dtype=np.float32)
                                             center = poly_np.mean(axis=0)
-                                            expanded_poly = center + (poly_np - center) * 1.5
+                                            expanded_poly = center + (poly_np - center) * 1.8  # 1.5 → 1.8
                                             
                                             # 확장된 영역과 원본 영역 마스크 생성
                                             mask_outer = np.zeros((STREAM_H, STREAM_W), dtype=np.uint8)
@@ -614,32 +656,64 @@ class BoxDetector:
                                                     depth_scale = d_frame.get_units()
                                                     surrounding_depth_mm = median_depth_unit * depth_scale * 1000.0
                                         except Exception as e:
-                                            # 측정 실패 시 None
+                                            # 측정 실패 시 None (로그 제거 - 너무 많이 뜸)
                                             surrounding_depth_mm = None
                                         
-                                        # BASELINE 선택
+                                        # BASELINE 선택 (3가지 중 가장 가까운 값)
                                         if surrounding_depth_mm is not None:
                                             # 주변 바닥 측정 성공 - 가까운 BASELINE 선택
                                             diff_low = abs(surrounding_depth_mm - baseline_low)
                                             diff_high = abs(surrounding_depth_mm - baseline_high)
+                                            diff_very_high = abs(surrounding_depth_mm - baseline_very_high)
                                             
-                                            if diff_low < diff_high:
-                                                baseline = baseline_low
-                                            else:
+                                            # 가장 작은 차이 찾기
+                                            min_diff = min(diff_low, diff_high, diff_very_high)
+                                            
+                                            if min_diff == diff_very_high:
+                                                baseline = baseline_very_high
+                                            elif min_diff == diff_high:
                                                 baseline = baseline_high
+                                            else:
+                                                baseline = baseline_low
+                                            
+                                            # 변화가 있을 때만 로그
+                                            if not hasattr(self, '_last_baseline_info'):
+                                                self._last_baseline_info = None
+                                            if baseline != self._last_baseline_info:
+                                                print(f"[BASELINE] {baseline}mm 선택")
+                                                self._last_baseline_info = baseline
                                         else:
                                             # 측정 실패 - fallback: 박스 Z값으로 판단
-                                            threshold = float(getattr(cfg, "BASELINE_THRESHOLD_MM", 650.0))
-                                            if depth_mm > threshold:
+                                            threshold_low_high = float(getattr(cfg, "BASELINE_THRESHOLD_MM", 660.0))  # 560과 750 사이
+                                            threshold_high_very_high = 875.0  # 750과 1000 사이
+                                            
+                                            if depth_mm > threshold_high_very_high:
+                                                baseline = baseline_very_high
+                                            elif depth_mm > threshold_low_high:
                                                 baseline = baseline_high
                                             else:
                                                 baseline = baseline_low
+                                            
+                                            # Fallback은 변화가 있을 때만 로그
+                                            if not hasattr(self, '_last_fallback_baseline'):
+                                                self._last_fallback_baseline = None
+                                            if baseline != self._last_fallback_baseline:
+                                                print(f"[BASELINE] Fallback {baseline}mm")
+                                                self._last_fallback_baseline = baseline
                                         
                                         depth_diff = baseline - depth_mm  # 박스 쌓이면 Z 감소
                                         
                                         # 허용 오차 범위 적용 (반 박스 높이)
                                         stack_for_this = int((depth_diff + box_h / 2) / box_h)
                                         stack_for_this = max(0, min(stack_for_this, int(getattr(cfg, "STACK_COUNT_MAX", 10))))
+                                        
+                                        # 변화가 있을 때만 로그
+                                        if not hasattr(self, '_last_fallback_stack'):
+                                            self._last_fallback_stack = None
+                                        current_stack_info = (baseline, stack_for_this)
+                                        if current_stack_info != self._last_fallback_stack:
+                                            print(f"[STACK] BASELINE={baseline}mm → {stack_for_this}개")
+                                            self._last_fallback_stack = current_stack_info
                                     
                                     else:
                                         # 단일 테이블 모드
@@ -658,6 +732,7 @@ class BoxDetector:
                                     "cx": cx,
                                     "cy": cy,
                                     "stack_count": stack_for_this,  # 이 OBB의 스택 개수
+                                    "is_vertical": is_vertical,  # 세로 박스 여부
 
                                 })
                         
@@ -669,6 +744,8 @@ class BoxDetector:
                             
                             # 전체 박스 개수 계산 (모든 OBB의 스택 합산)
                             total_boxes = sum(c["stack_count"] for c in candidates)
+                            print(f"[TOTAL] OBB 개수={len(candidates)}, 스택 합산={total_boxes}, 각 스택={[c['stack_count'] for c in candidates]}")
+                            
                             with self._lock:
                                 self._total_box_count = total_boxes
                             
@@ -690,10 +767,12 @@ class BoxDetector:
                             candidates.sort(key=lambda x: x["priority"])
                             best = candidates[0]
                             
-                            # Preview: 모든 candidates를 빨간색으로 그리기
+                            # Preview: 모든 candidates를 색상으로 그리기
                             if bool(getattr(cfg, "SHOW_PREVIEW", False)):
                                 for c in candidates:
-                                    cv2.polylines(vis, [np.int32(c["poly"])], True, (0, 0, 255), 1)
+                                    # 세로 박스는 하늘색(cyan), 정상 박스는 빨간색
+                                    color = (255, 255, 0) if c.get("is_vertical", False) else (0, 0, 255)
+                                    cv2.polylines(vis, [np.int32(c["poly"])], True, color, 1)
                             
                             # 3D 좌표 계산 (기존 방식만 사용)
                             tx, ty = XY_from_pixel_and_Z(best["cx"], best["cy"], intr, best["z_m"])
@@ -702,6 +781,7 @@ class BoxDetector:
                                 "move_y_mm": float(ty * 1000.0),
                                 "move_z_mm": float(best["z_m"] * 1000.0),
                                 "angle_deg": float(best["angle"]),
+                                "is_vertical": best.get("is_vertical", False),  # 세로 박스 여부
                             }
                             
                             # Depth 기반 스택 카운팅 (선택된 박스)
@@ -723,21 +803,27 @@ class BoxDetector:
                                 
                                 # Preview 그리기 (Jump 통과한 박스만)
                                 if bool(getattr(cfg, "SHOW_PREVIEW", False)):
-                                    # 박스와 중심점 그리기
-                                    cv2.polylines(vis, [np.int32(best["poly"])], True, (0, 255, 0), 2)
-                                    cv2.circle(vis, (int(best["cx"]), int(best["cy"])), 5, (0, 255, 0), -1)
+                                    # 세로 박스는 하늘색(cyan), 정상 박스는 초록색
+                                    box_color = (255, 255, 0) if best.get("is_vertical", False) else (0, 255, 0)
                                     
-                                    # XYZ 좌표는 박스 옆에 표시
+                                    # 박스와 중심점 그리기
+                                    cv2.polylines(vis, [np.int32(best["poly"])], True, box_color, 2)
+                                    cv2.circle(vis, (int(best["cx"]), int(best["cy"])), 5, box_color, -1)
+                                    
+                                    # XYZ 좌표는 박스 옆에 표시 (세로 박스는 [V] 표시)
                                     xyz_txt = (
                                         f"XYZ: {raw['move_x_mm']:.0f}, {raw['move_y_mm']:.0f}, "
                                         f"{raw['move_z_mm']:.0f}  ang:{raw['angle_deg']:.1f}"
                                     )
+                                    if best.get("is_vertical", False):
+                                        xyz_txt += " [V]"  # Vertical 표시
+                                    
                                     cv2.putText(
                                         vis, xyz_txt,
                                         (max(0, int(best["cx"]) - 20), max(20, int(best["cy"]) - 10)),
                                         cv2.FONT_HERSHEY_SIMPLEX,
                                         float(getattr(cfg, "OVERLAY_FONT_SCALE", 0.6)),
-                                        (0, 255, 0),
+                                        box_color,
                                         int(getattr(cfg, "OVERLAY_THICKNESS", 2)),
                                     )
                             

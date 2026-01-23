@@ -60,6 +60,17 @@ class RobotConnector:
             print(f"[ROBOT] Connecting... ip={self.ip}")
             self.robot = Robot.RPC(self.ip)
             print("[ROBOT] Connected ✅")
+            
+            # 속도 설정 (중요!)
+            try:
+                ret = self.robot.SetSpeed(80)
+                if ret == 0:
+                    print("[ROBOT] Speed set to 80 ✅")
+                else:
+                    print(f"[ROBOT] SetSpeed(80) failed: ret={ret}")
+            except Exception as e:
+                print(f"[ROBOT] SetSpeed error: {e}")
+            
             return True
             
         except Exception as e:
