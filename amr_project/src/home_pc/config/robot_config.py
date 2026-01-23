@@ -106,8 +106,8 @@ MOVE_CART_BLENDT_PRECISE = -1.0  # Precise 모드 blending (-1: blocking)
 
 # --- 단계별 속도 설정 (Pick & Place 최적화) ---
 MOVE_CART_VEL_PHASE0 = [100.0, 70.0, 50.0, 30.0]  # Phase0 접근: 빠르게 (⚡ 더 빠름)
-MOVE_CART_VEL_TARGET = [20.0, 30.0, 20.0]        # Target 하강: 천천히 (🎯 정밀)
-MOVE_CART_VEL_PLACE = [20.0, 40.0, 20.0]         # Place 하강: 중간 속도
+MOVE_CART_VEL_TARGET = [30.0, 20.0, 10.0]        # Target 하강: 천천히 (🎯 정밀)
+MOVE_CART_VEL_PLACE = [30.0, 20.0, 10.0]         # Place 하강: 중간 속도
 
 # --- MoveJ 속도 ---
 MOVEJ_VEL = 100.0                # 속도 (0-180 범위) ⚡ 80→100
