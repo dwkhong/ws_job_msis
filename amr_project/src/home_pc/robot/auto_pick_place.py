@@ -435,46 +435,49 @@ class AutoPickPlace:
                     print(f"[13] ❌ Cycle {i+1}: PICK FAIL:", out_pick.get("msg", ""))
                     return {"ok": False, "msg": "pick fail", "cycle": i+1, "completed": i, "detail": out_pick}
                 
-                # 6-1) 세로 박스 확인 및 즉시 처리
+                # 6-1) 세로 박스 확인 및 처리
                 is_vertical = False
                 last_meas = self.box_detector.get_last_measure_avg()
                 if last_meas is not None and last_meas.get("is_vertical", False):
                     is_vertical = True
-                    print(f"[13] 🔄 Cycle {i+1}: 세로 박스 감지! 즉시 회전 처리")
                     
-                    # 바로 회전 처리
-                    out_rotate = self.rotate_vertical_box_and_place(
-                        home_joint6=home_joint6,
-                        reconnect_cb=reconnect_cb
-                    )
-                    if not out_rotate.get("ok", False):
-                        print(f"[13] ❌ Cycle {i+1}: ROTATE FAIL:", out_rotate.get("msg", ""))
-                        return {"ok": False, "msg": "rotate fail", "cycle": i+1, "completed": i, "detail": out_rotate}
-                    
-                    # 재측정
-                    self.set_vision_allow_restart(True)
-                    meas2 = self.box_detector.cmd_measure_avg()
-                    if meas2 is None:
-                        print(f"[13] ❌ Cycle {i+1}: 재측정 실패")
-                        return {"ok": False, "msg": "remeasure fail", "cycle": i+1, "completed": i}
-                    
-                    self.set_vision_allow_restart(False)
-                    
-                    # 재계산
-                    self.target_pose.cmd_build_target_from_last(
-                        use_last_pose=True,
-                        reconnect_cb=reconnect_cb
-                    )
-                    self.ik_checker.cmd_check_target_from_last(
-                        check_phase0=True,
-                        reconnect_cb=reconnect_cb
-                    )
-                    
-                    # 재잡기
-                    out_pick2 = self.pick_place.cmd6_smooth_auto(reconnect_cb=reconnect_cb)
-                    if not out_pick2.get("ok", False):
-                        print(f"[13] ❌ Cycle {i+1}: RE-PICK FAIL:", out_pick2.get("msg", ""))
-                        return {"ok": False, "msg": "re-pick fail", "cycle": i+1, "completed": i, "detail": out_pick2}
+                    # 회전 기능 활성화 여부 확인
+                    if bool(getattr(cfg, "ENABLE_VERTICAL_BOX_ROTATION", False)):
+                        print(f"[13] 🔄 Cycle {i+1}: 세로 박스 회전 처리 시작")
+                        
+                        # 회전 처리
+                        out_rotate = self.rotate_vertical_box_and_place(
+                            home_joint6=home_joint6,
+                            reconnect_cb=reconnect_cb
+                        )
+                        if not out_rotate.get("ok", False):
+                            print(f"[13] ❌ Cycle {i+1}: ROTATE FAIL:", out_rotate.get("msg", ""))
+                            return {"ok": False, "msg": "rotate fail", "cycle": i+1, "completed": i, "detail": out_rotate}
+                        
+                        # 재측정
+                        self.set_vision_allow_restart(True)
+                        meas2 = self.box_detector.cmd_measure_avg()
+                        if meas2 is None:
+                            print(f"[13] ❌ Cycle {i+1}: 재측정 실패")
+                            return {"ok": False, "msg": "remeasure fail", "cycle": i+1, "completed": i}
+                        
+                        self.set_vision_allow_restart(False)
+                        
+                        # 재계산
+                        self.target_pose.cmd_build_target_from_last(
+                            use_last_pose=True,
+                            reconnect_cb=reconnect_cb
+                        )
+                        self.ik_checker.cmd_check_target_from_last(
+                            check_phase0=True,
+                            reconnect_cb=reconnect_cb
+                        )
+                        
+                        # 재잡기
+                        out_pick2 = self.pick_place.cmd6_smooth_auto(reconnect_cb=reconnect_cb)
+                        if not out_pick2.get("ok", False):
+                            print(f"[13] ❌ Cycle {i+1}: RE-PICK FAIL:", out_pick2.get("msg", ""))
+                            return {"ok": False, "msg": "re-pick fail", "cycle": i+1, "completed": i, "detail": out_pick2}
                 
                 # 7) HOME only (carry)
                 print(f"[13] Cycle {i+1}: Home으로 이동 중...")
@@ -549,14 +552,15 @@ class AutoPickPlace:
         
         # 반복 횟수 (GUI에서 전달 또는 CLI 입력)
         if num_cycles is None:
-            raw = input("박스 몇 개 옮길까요? (예: 4, b=back) > ").strip().lower()
+            raw = input("박스 몇 개 옮길까요? (1~6개, b=back) > ").strip().lower()
             if raw in ("b", "back", "q", "quit"):
                 return {"ok": True, "msg": "cancel"}
             
             try:
                 n = int(raw)
-                if n <= 0:
-                    raise ValueError()
+                if n <= 0 or n > 6:
+                    print("[12] 1~6 사이의 숫자를 입력하세요.")
+                    return {"ok": False, "msg": "invalid count"}
             except Exception:
                 print("[12] 숫자 입력이 아닙니다.")
                 return {"ok": False, "msg": "invalid count"}
@@ -564,6 +568,9 @@ class AutoPickPlace:
             n = num_cycles
             if n <= 0:
                 print("[12] num_cycles는 1 이상이어야 합니다.")
+                return {"ok": False, "msg": "invalid count"}
+            if n > 6:
+                print("[12] num_cycles는 최대 6까지 가능합니다.")
                 return {"ok": False, "msg": "invalid count"}
         
         # Home joint 가져오기
@@ -574,6 +581,20 @@ class AutoPickPlace:
         
         # 스택 카운터는 GUI에서 "Reset Counter" 버튼으로 제어
         # 12번은 리셋하지 않고 계속 누적
+        
+        # 누적 카운터 체크 (최대 6개)
+        if self._stack_counter >= 6:
+            print(f"[12] ❌ 이미 {self._stack_counter}개 쌓았습니다. (최대 6개)")
+            print(f"[12] Reset Counter 버튼을 눌러서 카운터를 리셋하세요.")
+            return {"ok": False, "msg": "stack full (6개)", "stack_counter": self._stack_counter}
+        
+        # 이번 사이클로 6개 초과하는지 체크
+        if self._stack_counter + n > 6:
+            available = 6 - self._stack_counter
+            print(f"[12] ⚠️ 현재 {self._stack_counter}개 쌓여있습니다.")
+            print(f"[12] {n}개를 더 쌓으면 총 {self._stack_counter + n}개가 되어 6개를 초과합니다.")
+            print(f"[12] 최대 {available}개까지만 가능합니다.")
+            return {"ok": False, "msg": f"would exceed 6 (현재:{self._stack_counter}, 요청:{n})", "stack_counter": self._stack_counter}
         
         print(f"\n[12] Auto Pick&Place start: {n} cycles (stack_counter={self._stack_counter})")
         
@@ -641,47 +662,53 @@ class AutoPickPlace:
                     print("[12] PICK FAIL:", out_pick.get("msg", ""))
                     return {"ok": False, "msg": "pick fail", "cycle": i+1, "detail": out_pick}
                 
-                # 6-1) 세로 박스 확인 및 즉시 처리
+                # 6-1) 세로 박스 확인 및 처리
                 is_vertical = False
                 last_meas = self.box_detector.get_last_measure_avg()
                 if last_meas is not None and last_meas.get("is_vertical", False):
                     is_vertical = True
-                    print("[12] 🔄 세로 박스 감지! 즉시 회전 처리")
                     
-                    # 바로 회전 처리 (HOME 가기 전에)
-                    out_rotate = self.rotate_vertical_box_and_place(
-                        home_joint6=home_joint6,
-                        reconnect_cb=reconnect_cb
-                    )
-                    if not out_rotate.get("ok", False):
-                        print("[12] ROTATE FAIL:", out_rotate.get("msg", ""))
-                        return {"ok": False, "msg": "rotate fail", "cycle": i+1, "detail": out_rotate}
-                    
-                    print("[12] 재측정 및 재잡기 시작")
-                    # 재측정
-                    self.set_vision_allow_restart(True)
-                    meas2 = self.box_detector.cmd_measure_avg()
-                    if meas2 is None:
-                        print("[12] 재측정 실패")
-                        return {"ok": False, "msg": "remeasure fail", "cycle": i+1}
-                    
-                    self.set_vision_allow_restart(False)
-                    
-                    # 재계산
-                    self.target_pose.cmd_build_target_from_last(
-                        use_last_pose=True,
-                        reconnect_cb=reconnect_cb
-                    )
-                    self.ik_checker.cmd_check_target_from_last(
-                        check_phase0=True,
-                        reconnect_cb=reconnect_cb
-                    )
-                    
-                    # 재잡기
-                    out_pick2 = self.pick_place.cmd6_smooth_auto(reconnect_cb=reconnect_cb)
-                    if not out_pick2.get("ok", False):
-                        print("[12] RE-PICK FAIL:", out_pick2.get("msg", ""))
-                        return {"ok": False, "msg": "re-pick fail", "cycle": i+1, "detail": out_pick2}
+                    # 회전 기능 활성화 여부 확인
+                    if bool(getattr(cfg, "ENABLE_VERTICAL_BOX_ROTATION", False)):
+                        print("[12] 🔄 세로 박스 감지! 회전 처리 시작")
+                        
+                        # 회전 처리
+                        out_rotate = self.rotate_vertical_box_and_place(
+                            home_joint6=home_joint6,
+                            reconnect_cb=reconnect_cb
+                        )
+                        if not out_rotate.get("ok", False):
+                            print("[12] ROTATE FAIL:", out_rotate.get("msg", ""))
+                            return {"ok": False, "msg": "rotate fail", "cycle": i+1, "detail": out_rotate}
+                        
+                        print("[12] 재측정 및 재잡기 시작")
+                        # 재측정
+                        self.set_vision_allow_restart(True)
+                        meas2 = self.box_detector.cmd_measure_avg()
+                        if meas2 is None:
+                            print("[12] 재측정 실패")
+                            return {"ok": False, "msg": "remeasure fail", "cycle": i+1}
+                        
+                        self.set_vision_allow_restart(False)
+                        
+                        # 재계산
+                        self.target_pose.cmd_build_target_from_last(
+                            use_last_pose=True,
+                            reconnect_cb=reconnect_cb
+                        )
+                        self.ik_checker.cmd_check_target_from_last(
+                            check_phase0=True,
+                            reconnect_cb=reconnect_cb
+                        )
+                        
+                        # 재잡기
+                        out_pick2 = self.pick_place.cmd6_smooth_auto(reconnect_cb=reconnect_cb)
+                        if not out_pick2.get("ok", False):
+                            print("[12] RE-PICK FAIL:", out_pick2.get("msg", ""))
+                            return {"ok": False, "msg": "re-pick fail", "cycle": i+1, "detail": out_pick2}
+                    else:
+                        print("[12] ⚠️  세로 박스 회전 처리 비활성화됨 (ENABLE_VERTICAL_BOX_ROTATION=False)")
+                        print("[12] 세로 박스를 그대로 처리합니다 (감지만 하고 넘어감)")
                 
                 # 7) HOME only (carry)
                 print("[12] Step7: HOME only (carry box)")

@@ -46,6 +46,14 @@ JUMP_Z_MM = 60.0        # Z 점프 임계값 (mm)
 JUMP_ANG_DEG = 10.0     # 각도 점프 임계값 (도)
 MAX_CONSEC_SKIPS_RESET = 15
 
+# 연속 Jump 리셋 설정 (박스 이동 대응)
+MAX_CONSECUTIVE_JUMPS = 3  # 연속 Jump 허용 횟수 (3번 연속 시 prev_valid 리셋)
+
+# 측정 안정성 체크 (박스 교체/이동 감지)
+XY_STD_THRESHOLD = 15.0  # XY 표준편차 임계값 (mm) - 정상: ~0.3mm, 교체: ~20mm
+Z_STD_THRESHOLD = 50.0   # Z 표준편차 임계값 (mm) - 정상: ~0.1mm
+DRIFT_THRESHOLD = 30.0   # 드리프트 임계값 (mm) - 첫/마지막 샘플 거리
+
 # ============================================================
 # Preview / Overlay
 # ============================================================
@@ -99,6 +107,10 @@ USE_ASPECT_RATIO_FILTER = True     # 종횡비 필터링 사용
 MAX_ASPECT_RATIO = 4.2             # 최대 종횡비 (긴 쪽 / 짧은 쪽)
                                     # 실제 박스: 정상(31/7.7=4.03), 세로(31/5.8=5.34)
                                     # 4.5 기준: 정상 통과, 세로 제외
+
+# 세로 박스 자동 회전 기능
+ENABLE_VERTICAL_BOX_ROTATION = False  # True: 세로 박스를 잡아서 회전 처리
+                                       # False: 세로 박스 감지 후 제외 (기본)
 
 # 박스 선택 우선순위
 BOX_SELECTION_Z_THRESHOLD_MM = 30.0  # Z 차이 임계값 (mm)

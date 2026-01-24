@@ -215,12 +215,30 @@ class BoxDetector:
         print(f"[Vision] 측정 시작 (목표: {n}개, timeout: {timeout}s)")
         start_t = time.time()
         
+        # 박스 사라짐 감지
+        last_sample_time = time.time()
+        no_sample_timeout = 3.0  # 3초 동안 샘플 없으면 박스 사라진 것으로 판단
+        last_count = 0
+        
         # 샘플 수집 대기
         while time.time() - start_t < timeout:
             with self._lock:
                 cnt = len(self._collect_samples)
+            
+            # 목표 달성
             if cnt >= n:
                 break
+            
+            # 새 샘플이 들어왔는지 체크
+            if cnt > last_count:
+                last_sample_time = time.time()
+                last_count = cnt
+            
+            # 일정 시간 동안 샘플이 안 들어오면 박스 사라진 것으로 판단
+            if cnt > 0 and (time.time() - last_sample_time > no_sample_timeout):
+                print(f"[Vision] ⚠️ 박스 사라짐 감지: {no_sample_timeout}초 동안 새 샘플 없음 (수집: {cnt}개)")
+                break
+            
             time.sleep(0.02)
         
         self._measuring_evt.clear()
@@ -242,6 +260,41 @@ class BoxDetector:
              for s in samples],
             dtype=np.float32,
         )
+        
+        # 표준편차 체크 (측정 안정성 검증)
+        std = np.std(arr, axis=0)
+        xy_std_threshold = float(getattr(cfg, "XY_STD_THRESHOLD", 15.0))
+        z_std_threshold = float(getattr(cfg, "Z_STD_THRESHOLD", 50.0))
+        
+        if std[0] > xy_std_threshold or std[1] > xy_std_threshold:
+            print(f"[Vision] ⚠️ 측정 불안정! X 표준편차={std[0]:.1f}mm, Y 표준편차={std[1]:.1f}mm")
+            print(f"[Vision] 임계값: {xy_std_threshold}mm")
+            print(f"[Vision] 박스가 흔들리거나 교체되었을 수 있습니다. 재측정이 필요합니다.")
+            return None
+        
+        if std[2] > z_std_threshold:
+            print(f"[Vision] ⚠️ Z축 불안정! 표준편차={std[2]:.1f}mm (임계값: {z_std_threshold}mm)")
+            print(f"[Vision] 재측정이 필요합니다.")
+            return None
+        
+        # 드리프트 체크 (첫 샘플 vs 마지막 샘플)
+        if len(samples) >= 2:
+            first_sample = samples[0]
+            last_sample = samples[-1]
+            
+            dx = last_sample['move_x_mm'] - first_sample['move_x_mm']
+            dy = last_sample['move_y_mm'] - first_sample['move_y_mm']
+            drift = np.sqrt(dx**2 + dy**2)
+            
+            drift_threshold = float(getattr(cfg, "DRIFT_THRESHOLD", 30.0))
+            
+            if drift > drift_threshold:
+                print(f"[Vision] ⚠️ 측정 중 박스 이동/교체 감지!")
+                print(f"[Vision] 첫 샘플: X={first_sample['move_x_mm']:.1f}, Y={first_sample['move_y_mm']:.1f}")
+                print(f"[Vision] 마지막 샘플: X={last_sample['move_x_mm']:.1f}, Y={last_sample['move_y_mm']:.1f}")
+                print(f"[Vision] 드리프트: {drift:.1f}mm (임계값: {drift_threshold}mm)")
+                print(f"[Vision] 재측정이 필요합니다.")
+                return None
         
         # 평균 계산 (필터링/스냅 없이 원본 평균만)
         m = np.mean(arr, axis=0)
@@ -444,10 +497,13 @@ class BoxDetector:
             mad_thres_m = float(getattr(cfg, "MAD_THRES_M", 0.020))
             
             # 메인 루프
+            consecutive_jumps = 0  # 연속 Jump 카운터
+            
             while self._running and (not self._stop_evt.is_set()):
                 # 리셋 이벤트 처리
                 if self._reset_evt.is_set():
                     prev_valid = None
+                    consecutive_jumps = 0  # 리셋 시 카운터도 초기화
                     self._reset_evt.clear()
                 
                 try:
@@ -571,24 +627,50 @@ class BoxDetector:
                                 box_width = float(np.linalg.norm(poly[0] - poly[1]))  # 픽셀
                                 box_height = float(np.linalg.norm(poly[1] - poly[2]))  # 픽셀
                                 
-                                # 종횡비 계산 (세로 박스 감지용)
+                                # 종횡비 계산
                                 longer_side = max(box_width, box_height)
                                 shorter_side = min(box_width, box_height)
                                 aspect_ratio = longer_side / shorter_side if shorter_side > 0 else 999
                                 
                                 # 세로 박스 판단
-                                max_aspect_ratio = float(getattr(cfg, "MAX_ASPECT_RATIO", 4.5))
+                                max_aspect_ratio = float(getattr(cfg, "MAX_ASPECT_RATIO", 4.2))
                                 is_vertical = aspect_ratio > max_aspect_ratio
                                 
+                                # 세로 박스 회전 기능 ON/OFF
+                                enable_rotation = bool(getattr(cfg, "ENABLE_VERTICAL_BOX_ROTATION", False))
+                                
                                 if is_vertical:
-                                    # 세로 박스 감지 로그
+                                    # Preview에 빨간색으로 그리기 (세로 박스 감지)
+                                    if bool(getattr(cfg, "SHOW_PREVIEW", False)):
+                                        cv2.polylines(vis, [np.int32(poly)], True, (0, 0, 255), 2)  # 빨간색 (red)
+                                        cx_txt = float(np.mean(poly[:, 0]))
+                                        cy_txt = float(np.mean(poly[:, 1]))
+                                        status_txt = "ROTATE" if enable_rotation else "VERTICAL"
+                                        cv2.putText(
+                                            vis, status_txt,
+                                            (int(cx_txt) - 30, int(cy_txt)),
+                                            cv2.FONT_HERSHEY_SIMPLEX,
+                                            0.5,
+                                            (0, 0, 255),  # 빨간색 (red)
+                                            2
+                                        )
+                                    
+                                    # 세로 박스 감지 로그 (10개마다)
                                     if not hasattr(self, '_last_vertical_count'):
                                         self._last_vertical_count = 0
                                     self._last_vertical_count += 1
                                     
                                     if self._last_vertical_count == 1 or self._last_vertical_count % 10 == 0:
-                                        print(f"[VERTICAL] 세로 박스 감지 (누적: {self._last_vertical_count}개): "
-                                              f"aspect_ratio={aspect_ratio:.2f}")
+                                        if enable_rotation:
+                                            print(f"[VERTICAL] 세로 박스 감지 (누적: {self._last_vertical_count}개): "
+                                                  f"aspect_ratio={aspect_ratio:.2f} → 회전 처리 예정")
+                                        else:
+                                            print(f"[FILTER] 세로 박스 제외 (누적: {self._last_vertical_count}개): "
+                                                  f"aspect_ratio={aspect_ratio:.2f} > {max_aspect_ratio:.2f}")
+                                    
+                                    # 회전 기능 OFF면 제외 (잡으러 가지 않음)
+                                    if not enable_rotation:
+                                        continue
                                 
                                 cx = float(np.mean(poly[:, 0]))
                                 cy = float(np.mean(poly[:, 1]))
@@ -770,8 +852,8 @@ class BoxDetector:
                             # Preview: 모든 candidates를 색상으로 그리기
                             if bool(getattr(cfg, "SHOW_PREVIEW", False)):
                                 for c in candidates:
-                                    # 세로 박스는 하늘색(cyan), 정상 박스는 빨간색
-                                    color = (255, 255, 0) if c.get("is_vertical", False) else (0, 0, 255)
+                                    # 세로 박스는 빨간색(red), 정상 박스는 하늘색(cyan)
+                                    color = (0, 0, 255) if c.get("is_vertical", False) else (255, 255, 0)
                                     cv2.polylines(vis, [np.int32(c["poly"])], True, color, 1)
                             
                             # 3D 좌표 계산 (기존 방식만 사용)
@@ -794,17 +876,21 @@ class BoxDetector:
                                     self._stack_count = 0
                             
                             # Jump 필터링
-                            if not is_jump(
+                            is_jump_detected = is_jump(
                                 prev_valid, raw,
                                 cfg.JUMP_XY_MM, cfg.JUMP_Z_MM, cfg.JUMP_ANG_DEG
-                            ):
+                            )
+                            
+                            if not is_jump_detected:
+                                # 정상 샘플 (Jump 아님)
                                 prev_valid = raw
                                 best_sample = raw
+                                consecutive_jumps = 0  # 정상이면 카운터 리셋
                                 
                                 # Preview 그리기 (Jump 통과한 박스만)
                                 if bool(getattr(cfg, "SHOW_PREVIEW", False)):
-                                    # 세로 박스는 하늘색(cyan), 정상 박스는 초록색
-                                    box_color = (255, 255, 0) if best.get("is_vertical", False) else (0, 255, 0)
+                                    # 세로 박스는 빨간색(red), 정상 박스는 초록색(green)
+                                    box_color = (0, 0, 255) if best.get("is_vertical", False) else (0, 255, 0)
                                     
                                     # 박스와 중심점 그리기
                                     cv2.polylines(vis, [np.int32(best["poly"])], True, box_color, 2)
@@ -826,6 +912,23 @@ class BoxDetector:
                                         box_color,
                                         int(getattr(cfg, "OVERLAY_THICKNESS", 2)),
                                     )
+                            else:
+                                # Jump 감지됨
+                                consecutive_jumps += 1
+                                max_consecutive = int(getattr(cfg, "MAX_CONSECUTIVE_JUMPS", 3))
+                                
+                                if consecutive_jumps >= max_consecutive:
+                                    # 연속 Jump 임계값 도달 → prev_valid 리셋
+                                    if prev_valid is not None:
+                                        print(f"[Vision] 박스 위치 변경 감지 ({consecutive_jumps}회 연속 Jump)")
+                                        print(f"[Vision] 이전 위치: X={prev_valid['move_x_mm']:.1f}, "
+                                              f"Y={prev_valid['move_y_mm']:.1f}, Z={prev_valid['move_z_mm']:.1f}")
+                                        print(f"[Vision] 현재 위치: X={raw['move_x_mm']:.1f}, "
+                                              f"Y={raw['move_y_mm']:.1f}, Z={raw['move_z_mm']:.1f}")
+                                        print(f"[Vision] 새 위치로 측정 재시작")
+                                    
+                                    prev_valid = None  # 리셋
+                                    consecutive_jumps = 0  # 카운터 리셋
                             
                             # OBB/Total은 Jump 여부와 관계없이 항상 표시
                             if bool(getattr(cfg, "SHOW_PREVIEW", False)):
