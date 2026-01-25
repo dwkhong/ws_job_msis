@@ -261,41 +261,6 @@ class BoxDetector:
             dtype=np.float32,
         )
         
-        # 표준편차 체크 (측정 안정성 검증)
-        std = np.std(arr, axis=0)
-        xy_std_threshold = float(getattr(cfg, "XY_STD_THRESHOLD", 15.0))
-        z_std_threshold = float(getattr(cfg, "Z_STD_THRESHOLD", 50.0))
-        
-        if std[0] > xy_std_threshold or std[1] > xy_std_threshold:
-            print(f"[Vision] ⚠️ 측정 불안정! X 표준편차={std[0]:.1f}mm, Y 표준편차={std[1]:.1f}mm")
-            print(f"[Vision] 임계값: {xy_std_threshold}mm")
-            print(f"[Vision] 박스가 흔들리거나 교체되었을 수 있습니다. 재측정이 필요합니다.")
-            return None
-        
-        if std[2] > z_std_threshold:
-            print(f"[Vision] ⚠️ Z축 불안정! 표준편차={std[2]:.1f}mm (임계값: {z_std_threshold}mm)")
-            print(f"[Vision] 재측정이 필요합니다.")
-            return None
-        
-        # 드리프트 체크 (첫 샘플 vs 마지막 샘플)
-        if len(samples) >= 2:
-            first_sample = samples[0]
-            last_sample = samples[-1]
-            
-            dx = last_sample['move_x_mm'] - first_sample['move_x_mm']
-            dy = last_sample['move_y_mm'] - first_sample['move_y_mm']
-            drift = np.sqrt(dx**2 + dy**2)
-            
-            drift_threshold = float(getattr(cfg, "DRIFT_THRESHOLD", 30.0))
-            
-            if drift > drift_threshold:
-                print(f"[Vision] ⚠️ 측정 중 박스 이동/교체 감지!")
-                print(f"[Vision] 첫 샘플: X={first_sample['move_x_mm']:.1f}, Y={first_sample['move_y_mm']:.1f}")
-                print(f"[Vision] 마지막 샘플: X={last_sample['move_x_mm']:.1f}, Y={last_sample['move_y_mm']:.1f}")
-                print(f"[Vision] 드리프트: {drift:.1f}mm (임계값: {drift_threshold}mm)")
-                print(f"[Vision] 재측정이 필요합니다.")
-                return None
-        
         # 평균 계산 (필터링/스냅 없이 원본 평균만)
         m = np.mean(arr, axis=0)
         

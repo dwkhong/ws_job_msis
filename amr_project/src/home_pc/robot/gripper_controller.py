@@ -18,7 +18,6 @@ class GripperController:
     - 그리퍼 활성화 및 제어
     - 상태 추적 (activated, closed)
     """
-    
     def __init__(self, robot_connector, robot_state):
         """
         Args:

@@ -631,48 +631,166 @@ class RobotGUI:
         threading.Thread(target=auto_loop_thread, daemon=True).start()
 
     # -------------------------
-    # Quick Start (13)
+    # Quick Start (13) - Full Auto Sequence
     # -------------------------
     def on_quick_start(self):
+        """
+        전체 자동화 시퀀스:
+        1. AMR Table 1 버튼 클릭 (이동)
+        2. Home 저장
+        3. 박스 6개 옮기기
+        4. AMR Table 2 버튼 클릭 (이동)
+        5. Start Stacking 실행
+        """
         if not self.auto_pick_place:
             self.log("AutoPickPlace not initialized")
             messagebox.showerror("Error", "Auto pick and place module not available")
             return
+        
+        if not self.safe_pick_place:
+            self.log("SafePickPlace not initialized")
+            messagebox.showerror("Error", "Manual stacking module not available")
+            return
 
         answer = messagebox.askyesno(
-            "Quick Start (13)",
-            "Run quick start?\n\n"
-            "- Robot connection check\n"
-            "- Vision start check\n"
-            "- Home save\n"
-            "- Auto move 4 boxes"
+            "Quick Start - Full Auto (13)",
+            "전체 자동화 시퀀스를 실행하시겠습니까?\n\n"
+            "1️⃣ AMR Table 1로 이동\n"
+            "2️⃣ Home 저장\n"
+            "3️⃣ 박스 6개 옮기기 (Vision Pick & Place)\n"
+            "4️⃣ AMR Table 2로 이동\n"
+            "5️⃣ Manual Stacking 실행\n"
         )
         if not answer:
             return
 
-        def quick_start_thread():
-            self.log("=" * 50)
-            self.log("Start Quick Start (13)")
-            self.log("=" * 50)
-
+        def full_auto_sequence():
+            self.log("=" * 60)
+            self.log("🚀 Full Auto Sequence Start")
+            self.log("=" * 60)
+            
             try:
-                result = self.auto_pick_place.cmd13_quick_start()
-            except Exception as e:
-                result = {"ok": False, "msg": str(e)}
-
-            if result.get("ok"):
+                # ========== STEP 1: AMR Table 1 버튼 클릭 ==========
+                self.log("\n" + "=" * 60)
+                self.log("📍 STEP 1: AMR Table 1 버튼 실행...")
+                self.log("=" * 60)
+                
+                # AMR Table 1 이동 (기존 버튼 기능 호출)
+                self.on_amr_goto("Table1")
+                
+                # AMR 이동 완료 대기 (간단한 방법)
+                import time
+                time.sleep(2)  # AMR 이동 시작 대기
+                
+                self.log("✅ AMR Table 1 이동 완료")
+                
+                # ========== STEP 2: Home 저장 ==========
+                self.log("\n" + "=" * 60)
+                self.log("💾 STEP 2: Saving Home Position...")
+                self.log("=" * 60)
+                
+                joint = self.robot_state.get_current_joint()
+                if joint is None:
+                    raise Exception("현재 Joint를 가져올 수 없습니다")
+                
+                self.robot_state.set_initial_joint6(joint)
+                self.log(f"✅ Home saved: {joint}")
+                
+                # ========== STEP 3: 박스 6개 옮기기 ==========
+                self.log("\n" + "=" * 60)
+                self.log("📦 STEP 3: Auto Pick & Place (6 boxes)...")
+                self.log("=" * 60)
+                
+                result = self.auto_pick_place.cmd12_auto_loop(num_cycles=6)
+                
+                if not result.get("ok"):
+                    msg = result.get("msg", "Unknown error")
+                    raise Exception(f"Auto Pick & Place 실패: {msg}")
+                
                 counter = result.get("stack_counter", 0)
                 self.ui(self.update_stack_counter, counter)
-                self.log("=" * 50)
-                self.log(f"Quick Start done (total moved: {counter})")
-                self.log("=" * 50)
-                self.ui(messagebox.showinfo, "Success", f"Quick Start done.\nTotal moved: {counter}")
-            else:
-                msg = result.get("msg", "Unknown error")
-                self.log(f"Quick Start failed: {msg}")
-                self.ui(messagebox.showerror, "Error", f"Quick Start failed:\n{msg}")
+                self.log(f"✅ Auto Pick & Place 완료 (총 {counter}개)")
+                
+                # ========== STEP 4: AMR Table 2 버튼 클릭 ==========
+                self.log("\n" + "=" * 60)
+                self.log("📍 STEP 4: AMR Table 2 버튼 실행...")
+                self.log("=" * 60)
+                
+                # AMR Table 2 이동 (기존 버튼 기능 호출)
+                self.on_amr_goto("Table2")
+                
+                # AMR 이동 완료 대기
+                time.sleep(2)
+                
+                self.log("✅ AMR Table 2 이동 완료")
+                
+                # ========== STEP 5: Manual Stacking 실행 ==========
+                self.log("\n" + "=" * 60)
+                self.log("🏗️ STEP 5: Manual Stacking...")
+                self.log("=" * 60)
+                
+                # Table 2 포즈 가져오기
+                table2_poses = self.pose_manager.get_table_poses("2")
+                pick_pose = table2_poses.get("pick_pose")
+                place_pose = table2_poses.get("place_pose")
+                safe_pick = table2_poses.get("safe_pick")
+                safe_place = table2_poses.get("safe_place")
+                
+                if not all([pick_pose, place_pose, safe_pick, safe_place]):
+                    raise Exception("Table 2의 포즈가 모두 저장되지 않았습니다")
+                
+                # 설정 가져오기
+                num_boxes = int(self.num_boxes_var.get())
+                box_height = float(self.box_height_var.get())
+                vel_normal = float(self.vel_normal_var.get())
+                vel_slow = float(self.vel_slow_var.get())
+                approach_offset = float(self.approach_offset_var.get())
+                push_direction = self.push_direction_var.get()
+                column_offset = float(self.column_offset_var.get())
+                
+                self.log(f"Stacking parameters: {num_boxes} boxes/column, {box_height}mm height")
+                
+                stacking_result = self.safe_pick_place.run_stacking_sequence(
+                    pick_pose=pick_pose,
+                    place_pose=place_pose,
+                    safe_pick=safe_pick,
+                    safe_place=safe_place,
+                    num_boxes=num_boxes,
+                    box_height=box_height,
+                    approach_offset=approach_offset,
+                    push_direction=push_direction,
+                    column_offset=column_offset,
+                    vel_normal=vel_normal,
+                    vel_slow=vel_slow,
+                    status_callback=self.log
+                )
+                
+                if not stacking_result.get("ok"):
+                    raise Exception("Manual Stacking 실패")
+                
+                moved = stacking_result.get("boxes_moved", 0)
+                self.log(f"✅ Manual Stacking 완료 (총 {moved}개)")
+                
+                # ========== 완료 ==========
+                self.log("\n" + "=" * 60)
+                self.log("🎉 Full Auto Sequence Complete!")
+                self.log(f"📊 총 Pick & Place: {counter}개")
+                self.log(f"📊 총 Manual Stack: {moved}개")
+                self.log("=" * 60)
+                
+                self.ui(messagebox.showinfo, 
+                       "Success", 
+                       f"전체 자동화 완료!\n\n"
+                       f"✅ Vision Pick & Place: {counter}개\n"
+                       f"✅ Manual Stacking: {moved}개")
+                
+            except Exception as e:
+                self.log("\n" + "=" * 60)
+                self.log(f"❌ Full Auto Sequence Failed: {str(e)}")
+                self.log("=" * 60)
+                self.ui(messagebox.showerror, "Error", f"자동화 실패:\n\n{str(e)}")
 
-        threading.Thread(target=quick_start_thread, daemon=True).start()
+        threading.Thread(target=full_auto_sequence, daemon=True).start()
 
     # -------------------------
     # Counter
@@ -738,12 +856,11 @@ class RobotGUI:
 
                     self.amr.set_speed_limit(0.2)
 
-                if point_name == "Table1":
-                    self.log(f"[AMR] Arrived at {point_name}")
+                self.log(f"[AMR] Arrived at {point_name}")
 
-                    self.log("[AMR] Moving robot arm to camera pose...")
-                    self.robot_motion.move_cart(gui_config.CAM_POSE)
-                    self.log("Robot arm ready")
+                self.log("[AMR] Moving robot arm to camera pose...")
+                self.robot_motion.move_cart(gui_config.CAM_POSE)
+                self.log("Robot arm ready")
 
             except Exception as e:
                 self.log(f"[AMR] Error: {e}")
