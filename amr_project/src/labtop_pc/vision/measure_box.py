@@ -1,4 +1,3 @@
-# src/labtop_pc/vision/measure_box.py
 from __future__ import annotations
 from typing import Optional, Dict, Any
 import time
@@ -61,6 +60,7 @@ def is_jump(prev, cur):
     if prev is None: return False
     if abs(cur["move_x_mm"] - prev["move_x_mm"]) > cfg.jump_xy_mm: return True
     if abs(cur["move_y_mm"] - prev["move_y_mm"]) > cfg.jump_xy_mm: return True
+    # Z값 점프는 물체 높이가 다를 수 있으므로 조금 더 관대하게 보거나 상황에 따라 주석 처리 가능
     if abs(cur["move_z_mm"] - prev["move_z_mm"]) > cfg.jump_z_mm: return True
     return False
 
@@ -77,6 +77,9 @@ class _VisionRuntime:
         self._latest_sample = None
         self._collect_samples = []
         self._is_measuring = False
+        
+        # [수정 1] 측정 시작 시 과거 기록(Jump 비교용)을 초기화하기 위한 플래그
+        self._reset_history_flag = False
 
     def start(self):
         if self._running: return
@@ -108,7 +111,10 @@ class _VisionRuntime:
         self._collect_samples = []
         self._is_measuring = True
         
-        print(f"[Vision] 측정 시작 (목표: {n}개)")
+        # [수정 1] 새로운 측정이 시작되었으므로, JUMP 비교 로직을 리셋하도록 요청
+        self._reset_history_flag = True
+        
+        print(f"[Vision] 측정 시작 (목표: {n}개, 이전 위치 기록 리셋)")
         start = time.time()
         while time.time() - start < timeout:
             if len(self._collect_samples) >= n:
@@ -141,6 +147,10 @@ class _VisionRuntime:
         STREAM_H = cfg.height
         FPS = cfg.fps
         
+        # [수정 2] 이미지 중심 좌표 미리 계산 (중앙에서 가까운 박스 찾기용)
+        IMG_CENTER_X = STREAM_W / 2.0
+        IMG_CENTER_Y = STREAM_H / 2.0
+        
         config.enable_stream(rs.stream.color, STREAM_W, STREAM_H, rs.format.bgr8, FPS)
         config.enable_stream(rs.stream.depth, STREAM_W, STREAM_H, rs.format.z16, FPS)
 
@@ -164,6 +174,12 @@ class _VisionRuntime:
         prev_valid = None
 
         while self._running:
+            # [수정 1 관련] 외부에서 리셋 요청이 들어오면 prev_valid를 None으로 만듦
+            if self._reset_history_flag:
+                prev_valid = None
+                self._reset_history_flag = False
+                # print("[Vision] JUMP 감지용 히스토리 리셋 완료")
+
             try:
                 # 프레임 대기
                 frames = pipeline.wait_for_frames()
@@ -213,19 +229,33 @@ class _VisionRuntime:
 
                         # 유효성 검사 (깊이값 존재 및 픽셀 수 충족)
                         if z_m > 0 and count > 50:
+                            # 2D 중심점 계산
+                            cx = np.mean(poly[:, 0])
+                            cy = np.mean(poly[:, 1])
+                            
+                            # [수정 2] 카메라 중심과의 거리(pixel) 계산
+                            dist_from_center = np.sqrt((cx - IMG_CENTER_X)**2 + (cy - IMG_CENTER_Y)**2)
+                            
                             angle = obb_angle_deg_upright0_rightplus(poly)
-                            candidates.append({'z_m': z_m, 'poly': poly, 'angle': angle})
+                            
+                            candidates.append({
+                                'z_m': z_m, 
+                                'poly': poly, 
+                                'angle': angle,
+                                'dist_center': dist_from_center, # 중심과의 거리 저장
+                                'cx': cx, 'cy': cy
+                            })
 
                     if candidates:
-                        # 가장 가까운(또는 Z 기준 정렬 필요한 경우 수정) 객체 선택
-                        # 여기서는 z_m(거리)이 가장 작은 순으로 정렬한다고 가정 (가장 가까운 물체)
-                        candidates.sort(key=lambda x: x['z_m'])
+                        # [수정 2] 정렬 기준 변경:
+                        # 1순위: 화면 중앙과의 거리 (dist_center) -> 작을수록 좋음
+                        # 2순위: 카메라 깊이 (z_m) -> (옵션: 너무 멀면 제외하거나 하지만 보통 중앙이 우선)
+                        candidates.sort(key=lambda x: x['dist_center'])
+                        
                         best = candidates[0]
                         
-                        # 중심점 계산
-                        cx, cy = np.mean(best['poly'][:, 0]), np.mean(best['poly'][:, 1])
-                        # 3D 좌표 변환
-                        tx, ty = XY_from_pixel_and_Z(cx, cy, intr, best['z_m'])
+                        # 3D 좌표 변환 (이미 계산된 cx, cy 사용)
+                        tx, ty = XY_from_pixel_and_Z(best['cx'], best['cy'], intr, best['z_m'])
                         
                         raw = {
                             "move_x_mm": tx * 1000.0,
@@ -235,6 +265,7 @@ class _VisionRuntime:
                         }
 
                         # 점프 필터 (값이 튀는지 확인)
+                        # [참고] measure_avg 호출 직후에는 prev_valid가 None이 되어 무조건 통과됨
                         if not is_jump(prev_valid, raw):
                             prev_valid = raw
                             best_sample = raw
@@ -242,11 +273,12 @@ class _VisionRuntime:
                             # 시각화 (정상 - 초록색)
                             txt = f"XYZ: {raw['move_x_mm']:.0f}, {raw['move_y_mm']:.0f}, {raw['move_z_mm']:.0f}"
                             cv2.polylines(vis, [np.int32(best['poly'])], True, (0, 255, 0), 2)
-                            cv2.putText(vis, txt, (int(cx), int(cy)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+                            cv2.circle(vis, (int(best['cx']), int(best['cy'])), 5, (0, 255, 0), -1) # 중심점 표시
+                            cv2.putText(vis, txt, (int(best['cx']), int(best['cy'])), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
                         else:
                             # 시각화 (점프 - 빨간색)
                             cv2.polylines(vis, [np.int32(best['poly'])], True, (0, 0, 255), 2)
-                            cv2.putText(vis, "JUMP", (int(cx), int(cy)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                            cv2.putText(vis, "JUMP", (int(best['cx']), int(best['cy'])), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
                 # 데이터 수집 (measure_avg 호출 시 동작)
                 if self._is_measuring and best_sample:
@@ -255,6 +287,10 @@ class _VisionRuntime:
 
                 # 화면 출력
                 if cfg.show_preview:
+                    # 화면 중앙 십자선 표시 (참고용)
+                    cv2.line(vis, (int(IMG_CENTER_X), 0), (int(IMG_CENTER_X), STREAM_H), (255, 255, 0), 1)
+                    cv2.line(vis, (0, int(IMG_CENTER_Y)), (STREAM_W, int(IMG_CENTER_Y)), (255, 255, 0), 1)
+                    
                     cv2.imshow(cfg.preview_win_name, vis)
                     # GUI 갱신 및 종료 키(ESC) 확인
                     if cv2.waitKey(1) & 0xFF == 27:
