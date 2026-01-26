@@ -127,7 +127,7 @@ class SafePickPlace:
         # 1. Move to safe pick position
         if status_callback:
             status_callback("Moving to safe pick position...")
-        err = self.robot_motion.move_cart(safe_pick, vel_list=[vel_normal])
+        err = self.robot_motion.move_cart(safe_pick, vel_list=[vel_normal], blendT=100)
         if err != 0:
             return False
         
@@ -137,7 +137,7 @@ class SafePickPlace:
         # 2. ✅ Approach pick (Document 2 추가 단계)
         if status_callback:
             status_callback("Moving to approach pick position...")
-        err = self.robot_motion.move_cart(approach_pick, vel_list=[vel_normal])
+        err = self.robot_motion.move_cart(approach_pick, vel_list=[vel_normal], blendT=100)
         if err != 0:
             return False
         
@@ -147,7 +147,7 @@ class SafePickPlace:
         # 3. Target pick (slow speed)
         if status_callback:
             status_callback("Approaching pick position...")
-        err = self.robot_motion.move_cart(target_pick, vel_list=[vel_slow])
+        err = self.robot_motion.move_cart(target_pick, vel_list=[vel_slow], blendT=-1)  # Blocking
         if err != 0:
             return False
         
@@ -157,13 +157,13 @@ class SafePickPlace:
         # ✅ 위치 도달 완료 대기 (중요!)
         if status_callback:
             status_callback("Waiting for position stabilization...")
-        time.sleep(1.5)  # 로봇이 완전히 정지할 때까지 대기
+        time.sleep(0.05)  # 로봇이 완전히 정지할 때까지 대기
         
         # 4. Close gripper
         if status_callback:
             status_callback("Closing gripper...")
         self.gripper.close()
-        time.sleep(0.5)  # 그리퍼 완전히 닫힐 때까지 대기
+        time.sleep(0.05)  # 그리퍼 완전히 닫힐 때까지 대기
         
         if self.stop_flag:
             return False
@@ -171,7 +171,7 @@ class SafePickPlace:
         # 5. ✅ Return to approach pick (Document 2 추가 단계)
         if status_callback:
             status_callback("Returning to approach pick...")
-        err = self.robot_motion.move_cart(approach_pick, vel_list=[vel_normal])
+        err = self.robot_motion.move_cart(approach_pick, vel_list=[vel_normal], blendT=100)
         if err != 0:
             return False
         
@@ -181,7 +181,7 @@ class SafePickPlace:
         # 6. Return to safe pick position
         if status_callback:
             status_callback("Returning to safe position...")
-        err = self.robot_motion.move_cart(safe_pick, vel_list=[vel_normal])
+        err = self.robot_motion.move_cart(safe_pick, vel_list=[vel_normal], blendT=100)
         if err != 0:
             return False
         
@@ -193,7 +193,7 @@ class SafePickPlace:
         # 7. Move to safe place position
         if status_callback:
             status_callback("Moving to safe place position...")
-        err = self.robot_motion.move_cart(safe_place, vel_list=[vel_normal])
+        err = self.robot_motion.move_cart(safe_place, vel_list=[vel_normal], blendT=100)
         if err != 0:
             return False
         
@@ -203,7 +203,7 @@ class SafePickPlace:
         # 8. Approach place
         if status_callback:
             status_callback("Approaching place...")
-        err = self.robot_motion.move_cart(approach_place, vel_list=[vel_normal])
+        err = self.robot_motion.move_cart(approach_place, vel_list=[vel_normal], blendT=100)
         if err != 0:
             return False
         
@@ -213,7 +213,7 @@ class SafePickPlace:
         # 9. Move to final place position
         if status_callback:
             status_callback("Approaching place position...")
-        err = self.robot_motion.move_cart(target_place, vel_list=[vel_slow])
+        err = self.robot_motion.move_cart(target_place, vel_list=[vel_slow], blendT=-1)  # Blocking
         if err != 0:
             return False
         
@@ -232,7 +232,7 @@ class SafePickPlace:
         # 11. Return to approach position after place
         if status_callback:
             status_callback("Approaching place after place...")
-        err = self.robot_motion.move_cart(approach_place, vel_list=[vel_normal])
+        err = self.robot_motion.move_cart(approach_place, vel_list=[vel_normal], blendT=100)
         if err != 0:
             return False
         
@@ -242,7 +242,7 @@ class SafePickPlace:
         # 12. Push start
         if status_callback:
             status_callback("Pushing box to align...")
-        err = self.robot_motion.move_cart(push_s, vel_list=[vel_slow])
+        err = self.robot_motion.move_cart(push_s, vel_list=[vel_slow], blendT=100)
         if err != 0:
             return False
         
@@ -252,7 +252,7 @@ class SafePickPlace:
         # 13. ✅ Push end (Document 2: 속도 10 고정)
         if status_callback:
             status_callback("Pushing box to align end...")
-        err = self.robot_motion.move_cart(push_e, vel_list=[10.0])  # ✅ 10 고정
+        err = self.robot_motion.move_cart(push_e, vel_list=[10.0], blendT=-1)  # Blocking
         if err != 0:
             return False
         
@@ -262,7 +262,7 @@ class SafePickPlace:
         # 14. Return to approach position
         if status_callback:
             status_callback("Approaching place after place...")
-        err = self.robot_motion.move_cart(approach_place, vel_list=[vel_slow])
+        err = self.robot_motion.move_cart(approach_place, vel_list=[vel_slow], blendT=100)
         if err != 0:
             return False
         
@@ -272,7 +272,7 @@ class SafePickPlace:
         # 15. Return to safe place position
         if status_callback:
             status_callback("Returning to safe position...")
-        err = self.robot_motion.move_cart(safe_place, vel_list=[vel_normal])
+        err = self.robot_motion.move_cart(safe_place, vel_list=[vel_normal], blendT=100)
         if err != 0:
             return False
         
@@ -284,7 +284,7 @@ class SafePickPlace:
         place_pose,
         safe_pick,
         safe_place,
-        num_boxes,
+        num_boxes,  # ⚠️ 무시됨 (항상 6개 고정)
         box_height,
         approach_offset=40.0,
         push_direction='LEFT',
@@ -294,18 +294,18 @@ class SafePickPlace:
         status_callback=None
     ):
         """
-        Run the stacking sequence (multiple boxes, 2 columns)
+        Run the stacking sequence (3+3 pickup → 4+2 stacking)
         
-        ✅ Document 2 로직 유지:
-        - 컬럼1: num_boxes개
-        - 컬럼2: num_boxes-1개 (비대칭)
+        ⚠️ 주의: 항상 6개 박스를 처리합니다 (고정)
+        - 픽업: Column 1에서 3개, Column 2에서 3개
+        - 쌓기: 아래층 4개, 위층 2개
         
         Args:
             pick_pose: Base pick pose [x, y, z, rx, ry, rz]
             place_pose: Base place pose
             safe_pick: Safe pick waypoint pose
             safe_place: Safe place waypoint pose
-            num_boxes: Number of boxes for FIRST column (컬럼2는 -1개)
+            num_boxes: ⚠️ 무시됨 (항상 6개 고정)
             box_height: Height of each box (mm)
             approach_offset: Approach offset for pick/place (mm)
             push_direction: Push direction 'LEFT' or 'RIGHT'
@@ -320,84 +320,87 @@ class SafePickPlace:
         self.reset_flags()
         boxes_moved = 0
         
-        for j in range(2):  # 2 columns
-            # Calculate pick X offset for each column
-            pick_x_offset = -j * column_offset
+        # ✅ 새 로직: 3+3 픽업 → 4+2 쌓기
+        # 순서: Col1에서 3개(아래) → Col2에서 1개(아래) → Col2에서 2개(위)
+        
+        pickup_sequence = [
+            # (pickup_column, pickup_index, place_layer, place_index_in_layer)
+            (0, 0, 0, 0),  # Column1 박스1 → 아래층 1번
+            (0, 1, 0, 1),  # Column1 박스2 → 아래층 2번
+            (0, 2, 0, 2),  # Column1 박스3 → 아래층 3번
+            (1, 0, 0, 3),  # Column2 박스1 → 아래층 4번 (아래층 완성)
+            (1, 1, 1, 0),  # Column2 박스2 → 위층 1번
+            (1, 2, 1, 1),  # Column2 박스3 → 위층 2번 (위층 완성)
+        ]
+        
+        for seq_idx, (pickup_col, pickup_idx, place_layer, place_idx) in enumerate(pickup_sequence):
+            # Check for stop
+            if self.stop_flag:
+                if status_callback:
+                    status_callback("Operation stopped by user")
+                break
+            
+            # Wait if paused
+            while self.pause_flag and not self.stop_flag:
+                if status_callback:
+                    status_callback("Paused - waiting for resume...")
+                time.sleep(0.1)
+            
+            # Calculate pick position
+            pick_x_offset = -pickup_col * column_offset
             pick_pose_offset = self.set_pose_x(pick_pose, pick_pose[0] + pick_x_offset)
             safe_pick_offset = self.set_pose_x(safe_pick, safe_pick[0] + pick_x_offset)
             
+            pick_z = pick_pose_offset[2] - pickup_idx * box_height
+            
+            # Calculate place position
+            place_z = place_pose[2] + place_layer * box_height  # layer 0 or 1
+            
+            # Place Y calculation
+            if push_direction == 'LEFT':
+                place_y = place_pose[1] - place_idx * 74 + place_layer * 74
+                push_start = place_y - 150
+                push_end = (place_y + 37) - (place_layer * 74)
+            else:  # RIGHT
+                place_y = place_pose[1] + place_idx * 80
+                push_start = place_y + 150
+                push_end = place_y - 100
+            
+            box_num = boxes_moved + 1
+            layer_name = "아래층" if place_layer == 0 else "위층"
+            
             if status_callback:
                 status_callback(f"\n{'='*50}")
-                status_callback(f"Column {j+1}/2 (X offset: {pick_x_offset:.1f}mm)")
+                status_callback(f"Box {box_num}/6 (픽업: Col{pickup_col+1}-{pickup_idx+1}, 쌓기: {layer_name}-{place_idx+1})")
                 status_callback(f"{'='*50}")
+                status_callback(f"Pick: X={pick_pose_offset[0]:.1f}, Z={pick_z:.1f}")
+                status_callback(f"Place: Y={place_y:.1f}, Z={place_z:.1f}")
             
-            # ✅ Document 2 로직: num_boxes - j (비대칭)
-            boxes_in_column = num_boxes - j
+            ok = self.pick_and_place_one(
+                pick_base=pick_pose_offset,
+                place_base=place_pose,
+                safe_pick=safe_pick_offset,
+                safe_place=safe_place,
+                pick_z=pick_z,
+                place_z=place_z,
+                place_y=place_y,
+                push_start=push_start,
+                push_end=push_end,
+                approach_offset=approach_offset,
+                vel_normal=vel_normal,
+                vel_slow=vel_slow,
+                status_callback=status_callback
+            )
             
-            for i in range(boxes_in_column):
-                # Check for stop before each box
-                if self.stop_flag:
-                    if status_callback:
-                        status_callback("Operation stopped by user")
-                    break
-                
-                # Wait if paused
-                while self.pause_flag and not self.stop_flag:
-                    if status_callback:
-                        status_callback("Paused - waiting for resume...")
-                    time.sleep(0.2)
-                
-                # Calculate positions
-                pick_z = pick_pose_offset[2] - i * box_height
-                place_z = place_pose[2] + j * box_height  # Each column stacks on top of previous
-                
-                # ✅ Document 2 로직: place_y 계산
-                if push_direction == 'LEFT':
-                    place_y = place_pose[1] - i * 74 + j * 74
-                    push_start = place_y - 150
-                    push_end = (place_y + 37) - (j * 74)
-                else:  # RIGHT
-                    place_y = place_pose[1] + i * 80
-                    push_start = place_y + 150
-                    push_end = place_y - 100
-                
-                box_num = boxes_moved + 1
-                total_boxes = num_boxes + (num_boxes - 1)  # 첫 컬럼 + 둘째 컬럼
-                
+            if not ok:
                 if status_callback:
-                    status_callback(f"\n--- Box {box_num}/{total_boxes} (Col{j+1}, Row{i+1}) ---")
-                    status_callback(f"Pick: X={pick_pose_offset[0]:.1f}, Z={pick_z:.1f}")
-                    status_callback(f"Place: Y={place_y:.1f}, Z={place_z:.1f}")
-                
-                ok = self.pick_and_place_one(
-                    pick_base=pick_pose_offset,
-                    place_base=place_pose,
-                    safe_pick=safe_pick_offset,
-                    safe_place=safe_place,
-                    pick_z=pick_z,
-                    place_z=place_z,
-                    place_y=place_y,
-                    push_start=push_start,
-                    push_end=push_end,
-                    approach_offset=approach_offset,
-                    vel_normal=vel_normal,
-                    vel_slow=vel_slow,
-                    status_callback=status_callback
-                )
-                
-                if not ok:
-                    if status_callback:
-                        status_callback("Pick-and-place aborted")
-                    break
-                
-                boxes_moved += 1
-                time.sleep(0.2)
-            
-            # 컬럼 종료 시 stop 체크
-            if self.stop_flag:
+                    status_callback("Pick-and-place aborted")
                 break
+            
+            boxes_moved += 1
+            time.sleep(0.1)
         
-        total_requested = num_boxes + (num_boxes - 1)
+        total_requested = 6  # 4 + 2 = 6개 고정
         
         if status_callback:
             status_callback(f"Stacking sequence completed ({boxes_moved}/{total_requested} boxes moved)")

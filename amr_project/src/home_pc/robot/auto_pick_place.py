@@ -210,13 +210,13 @@ class AutoPickPlace:
         # 스택 위치 선택 (1~3개: 위치1, 4~6개: 위치2)
         if self._stack_counter < cfg.STACK_POSITION_CHANGE_AT:
             # 위치 1 사용
-            a_joint = cfg.WP11_A_JOINT
+            a_joint = cfg.WP11_A_JOINT  # ✅ JOINT 사용
             drop_base = cfg.WP11_DROP_BASE_POSE
             stack_offset = self._stack_counter
             position_name = "위치1"
         else:
             # 위치 2 사용
-            a_joint = cfg.WP11_B_A_JOINT
+            a_joint = cfg.WP11_B_A_JOINT  # ✅ JOINT 사용
             drop_base = cfg.WP11_B_DROP_BASE_POSE
             stack_offset = self._stack_counter - cfg.STACK_POSITION_CHANGE_AT
             position_name = "위치2"
@@ -235,9 +235,10 @@ class AutoPickPlace:
         
         print(f"\n[PLACE] counter={self._stack_counter} {position_name} stack_offset={stack_offset} dropZ={drop[2]:.1f}")
         
-        # 1) A 위치로 이동
+        # 1) A 위치로 이동 (MoveJ 사용 - 곡선 경로로 충돌 회피)
+        print(f"[PLACE] 1) A MoveJ")
         r = self.robot_motion.move_j(
-            joint_pos=a_joint,
+            joint_pos=a_joint,  # ✅ JOINT 사용
             label="A",
             reconnect_cb=reconnect_cb
         )
@@ -269,9 +270,10 @@ class AutoPickPlace:
         except Exception as e:
             return {"ok": False, "msg": f"gripper_open failed: {e}", "drop": drop}
         
-        # 4) A 위치로 복귀
+        # 4) A 위치로 복귀 (MoveJ 사용 - 곡선 경로로 충돌 회피)
+        print(f"[PLACE] 4) A back MoveJ")
         r = self.robot_motion.move_j(
-            joint_pos=a_joint,  # ✅ 수정: 현재 사용한 A 위치로 복귀 (위치1 또는 위치2)
+            joint_pos=a_joint,  # ✅ JOINT 사용
             label="A back",
             reconnect_cb=reconnect_cb
         )

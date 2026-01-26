@@ -96,7 +96,7 @@ STEP_TRY_LIST_DEFAULT = [STEP_SCALE_DEFAULT, 0.05, 0.02, 0.01]
 MOVE_CART_VEL = 100.0                # 이동 속도 (0-100) ⚡ 20→80 (4배 향상)
 MOVE_CART_ACC = 0.0                 # 가속도 (SDK에서 사용 안 함, 0.0 고정)
 MOVE_CART_OVL = 100.0               # override(%)
-MOVE_CART_BLENDT = 100               # blending time (-1: blocking, 완전 정지)
+MOVE_CART_BLENDT = -1               # blending time (-1: blocking, 완전 정지)
 MOVE_CART_EX = -1                   # 확장 옵션 (joint config)
 
 # --- 속도 Fallback 리스트 (높은 속도부터 시도) ---

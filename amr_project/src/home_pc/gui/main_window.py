@@ -40,7 +40,7 @@ class RobotGUI:
         """
         self.root = root
         self.root.title("Fairino Robot Control")
-        self.root.geometry("1200x800")  # 900 -> 1200
+        self.root.geometry("960x640")  # 1200x800 -> 960x640 (80% scale)
 
         # Controllers
         self.robot_connector = controllers["robot_connector"]
@@ -72,7 +72,7 @@ class RobotGUI:
 
         # Left container (scrollable) - 더 넓게
         left_container = ttk.Frame(self.root)
-        left_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 5))
+        left_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(8, 4))  # 10,5 -> 8,4
 
         self.canvas = tk.Canvas(left_container)
         self.canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -146,55 +146,55 @@ class RobotGUI:
 
     def create_connection_frame(self):
         frame = ttk.LabelFrame(self.left_frame, text="Robot Connection", padding=10)
-        frame.pack(fill=tk.X, padx=10, pady=5)
+        frame.pack(fill=tk.X, padx=8, pady=4)
 
         ttk.Label(frame, text="Robot IP:").grid(row=0, column=0, sticky=tk.W)
 
         self.ip_var = tk.StringVar(value=getattr(self.robot_connector, "ip", ""))
-        ttk.Entry(frame, textvariable=self.ip_var, width=20).grid(row=0, column=1, sticky=tk.W, padx=5)
+        ttk.Entry(frame, textvariable=self.ip_var, width=16).grid(row=0, column=1, sticky=tk.W, padx=4)
 
-        ttk.Button(frame, text="Connect", command=self.on_connect).grid(row=0, column=2, padx=5)
-        ttk.Button(frame, text="Disconnect", command=self.on_disconnect).grid(row=0, column=3, padx=5)
+        ttk.Button(frame, text="Connect", command=self.on_connect).grid(row=0, column=2, padx=4)
+        ttk.Button(frame, text="Disconnect", command=self.on_disconnect).grid(row=0, column=3, padx=4)
 
         self.status_label = ttk.Label(frame, text="Status: Disconnected", foreground="red")
-        self.status_label.grid(row=0, column=4, padx=10)
+        self.status_label.grid(row=0, column=4, padx=8)
 
     def create_control_frame(self):
         frame = ttk.LabelFrame(self.left_frame, text="Robot Controls", padding=10)
-        frame.pack(fill=tk.X, padx=10, pady=5)
+        frame.pack(fill=tk.X, padx=8, pady=4)
 
-        ttk.Button(frame, text="STOP", command=self.on_stop, width=15).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame, text="PAUSE", command=self.on_pause, width=15).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame, text="RESUME", command=self.on_resume, width=15).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame, text="GO HOME", command=self.on_go_home, width=15).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame, text="STOP", command=self.on_stop, width=12).pack(side=tk.LEFT, padx=4)
+        ttk.Button(frame, text="PAUSE", command=self.on_pause, width=12).pack(side=tk.LEFT, padx=4)
+        ttk.Button(frame, text="RESUME", command=self.on_resume, width=12).pack(side=tk.LEFT, padx=4)
+        ttk.Button(frame, text="GO HOME", command=self.on_go_home, width=12).pack(side=tk.LEFT, padx=4)
 
-        ttk.Button(frame, text="EXIT", command=self.on_close, width=10).pack(side=tk.RIGHT, padx=5)
+        ttk.Button(frame, text="EXIT", command=self.on_close, width=10).pack(side=tk.RIGHT, padx=4)
 
         if AMR_AVAILABLE:
-            ttk.Button(frame, text="AMR Table1", command=lambda: self.on_amr_goto("Table1"), width=12).pack(side=tk.LEFT, padx=5)
-            ttk.Button(frame, text="AMR Table2", command=lambda: self.on_amr_goto("Table2"), width=12).pack(side=tk.LEFT, padx=5)
-            ttk.Button(frame, text="AMR Stop", command=self.on_amr_stop, width=12).pack(side=tk.LEFT, padx=5)
+            ttk.Button(frame, text="AMR Table1", command=lambda: self.on_amr_goto("Table1"), width=12).pack(side=tk.LEFT, padx=4)
+            ttk.Button(frame, text="AMR Table2", command=lambda: self.on_amr_goto("Table2"), width=12).pack(side=tk.LEFT, padx=4)
+            ttk.Button(frame, text="AMR Stop", command=self.on_amr_stop, width=12).pack(side=tk.LEFT, padx=4)
 
     def create_vision_frame(self):
         frame = ttk.LabelFrame(self.left_frame, text="Vision Control (Camera + YOLO)", padding=10)
-        frame.pack(fill=tk.X, padx=10, pady=5)
+        frame.pack(fill=tk.X, padx=8, pady=4)
 
-        self.btn_vision_on = ttk.Button(frame, text="Vision ON", command=self.on_vision_on, width=15)
-        self.btn_vision_on.pack(side=tk.LEFT, padx=5)
+        self.btn_vision_on = ttk.Button(frame, text="Vision ON", command=self.on_vision_on, width=12)
+        self.btn_vision_on.pack(side=tk.LEFT, padx=4)
 
-        self.btn_vision_off = ttk.Button(frame, text="Vision OFF", command=self.on_vision_off, width=15, state=tk.DISABLED)
-        self.btn_vision_off.pack(side=tk.LEFT, padx=5)
+        self.btn_vision_off = ttk.Button(frame, text="Vision OFF", command=self.on_vision_off, width=12, state=tk.DISABLED)
+        self.btn_vision_off.pack(side=tk.LEFT, padx=4)
 
         self.vision_status_label = ttk.Label(frame, text="Status: OFF", foreground="red")
-        self.vision_status_label.pack(side=tk.LEFT, padx=10)
+        self.vision_status_label.pack(side=tk.LEFT, padx=8)
 
     def create_joint_frame(self):
         frame = ttk.LabelFrame(self.left_frame, text=f"Joint Movement (+/- {gui_config.JOINT_INCREMENT} deg)", padding=10)
-        frame.pack(fill=tk.X, padx=10, pady=5)
+        frame.pack(fill=tk.X, padx=8, pady=4)
 
         for i in range(6):
             sub_frame = ttk.Frame(frame)
-            sub_frame.pack(fill=tk.X, padx=5, pady=3)
+            sub_frame.pack(fill=tk.X, padx=4, pady=2)
 
             ttk.Label(sub_frame, text=f"Joint {i+1}:", width=10).pack(side=tk.LEFT)
             ttk.Button(sub_frame, text="<", width=3, command=lambda j=i: self.on_joint_move(j, -1)).pack(side=tk.LEFT, padx=2)
@@ -202,14 +202,14 @@ class RobotGUI:
 
     def create_gripper_frame(self):
         frame = ttk.LabelFrame(self.left_frame, text="Gripper Control", padding=10)
-        frame.pack(fill=tk.X, padx=10, pady=5)
+        frame.pack(fill=tk.X, padx=8, pady=4)
 
-        ttk.Button(frame, text="Open", command=self.on_gripper_open, width=20).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame, text="Close", command=self.on_gripper_close, width=20).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame, text="Open", command=self.on_gripper_open, width=16).pack(side=tk.LEFT, padx=4)
+        ttk.Button(frame, text="Close", command=self.on_gripper_close, width=16).pack(side=tk.LEFT, padx=4)
 
     def create_pose_frame(self):
         frame = ttk.LabelFrame(self.left_frame, text="Current Pose (Cartesian)", padding=10)
-        frame.pack(fill=tk.X, padx=10, pady=5)
+        frame.pack(fill=tk.X, padx=8, pady=4)
 
         self.pose_label = ttk.Label(frame, text="Not available", font=("Courier", 9))
         self.pose_label.pack()
@@ -222,7 +222,7 @@ class RobotGUI:
 
     def create_save_frame(self):
         frame = ttk.LabelFrame(self.left_frame, text="Pose Management", padding=10)
-        frame.pack(fill=tk.X, padx=10, pady=5)
+        frame.pack(fill=tk.X, padx=8, pady=4)
 
         ttk.Button(frame, text="Save Pick", command=self.on_save_pick, width=12).pack(side=tk.LEFT, padx=3)
         ttk.Button(frame, text="Save Safe Pick", command=self.on_save_safe_pick, width=12).pack(side=tk.LEFT, padx=3)
@@ -232,80 +232,80 @@ class RobotGUI:
 
     def create_param_frame(self):
         frame = ttk.LabelFrame(self.left_frame, text="Stacking Parameters", padding=10)
-        frame.pack(fill=tk.X, padx=10, pady=5)
+        frame.pack(fill=tk.X, padx=8, pady=4)
 
-        ttk.Label(frame, text="Number of Boxes:").grid(row=0, column=0, sticky=tk.W, padx=5)
+        ttk.Label(frame, text="Number of Boxes:").grid(row=0, column=0, sticky=tk.W, padx=4)
         self.num_boxes_var = tk.IntVar(value=self.pose_manager.get_param("num_boxes", 4))
-        ttk.Entry(frame, textvariable=self.num_boxes_var, width=10).grid(row=0, column=1, sticky=tk.W, padx=5)
+        ttk.Entry(frame, textvariable=self.num_boxes_var, width=10).grid(row=0, column=1, sticky=tk.W, padx=4)
 
-        ttk.Label(frame, text="Box Height (mm):").grid(row=0, column=2, sticky=tk.W, padx=5)
+        ttk.Label(frame, text="Box Height (mm):").grid(row=0, column=2, sticky=tk.W, padx=4)
         self.box_height_var = tk.DoubleVar(value=self.pose_manager.get_param("box_height", 58.0))
-        ttk.Entry(frame, textvariable=self.box_height_var, width=10).grid(row=0, column=3, sticky=tk.W, padx=5)
+        ttk.Entry(frame, textvariable=self.box_height_var, width=10).grid(row=0, column=3, sticky=tk.W, padx=4)
 
-        ttk.Label(frame, text="Table:").grid(row=0, column=4, sticky=tk.W, padx=5)
+        ttk.Label(frame, text="Table:").grid(row=0, column=4, sticky=tk.W, padx=4)
         self.table_var = tk.StringVar(value="1")
         self.table_combo = ttk.Combobox(frame, textvariable=self.table_var, values=["1", "2", "3", "4", "5"], width=5, state="readonly")
-        self.table_combo.grid(row=0, column=5, sticky=tk.W, padx=5)
+        self.table_combo.grid(row=0, column=5, sticky=tk.W, padx=4)
 
-        ttk.Label(frame, text="Normal Speed:").grid(row=1, column=0, sticky=tk.W, padx=5)
+        ttk.Label(frame, text="Normal Speed:").grid(row=1, column=0, sticky=tk.W, padx=4)
         self.vel_normal_var = tk.DoubleVar(value=self.pose_manager.get_param("vel_normal", 30.0))
-        ttk.Entry(frame, textvariable=self.vel_normal_var, width=10).grid(row=1, column=1, sticky=tk.W, padx=5)
+        ttk.Entry(frame, textvariable=self.vel_normal_var, width=10).grid(row=1, column=1, sticky=tk.W, padx=4)
 
-        ttk.Label(frame, text="Slow Speed:").grid(row=1, column=2, sticky=tk.W, padx=5)
+        ttk.Label(frame, text="Slow Speed:").grid(row=1, column=2, sticky=tk.W, padx=4)
         self.vel_slow_var = tk.DoubleVar(value=self.pose_manager.get_param("vel_slow", 30.0))
-        ttk.Entry(frame, textvariable=self.vel_slow_var, width=10).grid(row=1, column=3, sticky=tk.W, padx=5)
+        ttk.Entry(frame, textvariable=self.vel_slow_var, width=10).grid(row=1, column=3, sticky=tk.W, padx=4)
 
-        ttk.Label(frame, text="Approach Offset (mm):").grid(row=2, column=0, sticky=tk.W, padx=5)
+        ttk.Label(frame, text="Approach Offset (mm):").grid(row=2, column=0, sticky=tk.W, padx=4)
         self.approach_offset_var = tk.DoubleVar(value=self.pose_manager.get_param("approach_offset", 40.0))
-        ttk.Entry(frame, textvariable=self.approach_offset_var, width=10).grid(row=2, column=1, sticky=tk.W, padx=5)
+        ttk.Entry(frame, textvariable=self.approach_offset_var, width=10).grid(row=2, column=1, sticky=tk.W, padx=4)
 
-        ttk.Label(frame, text="Push Direction:").grid(row=2, column=2, sticky=tk.W, padx=5)
+        ttk.Label(frame, text="Push Direction:").grid(row=2, column=2, sticky=tk.W, padx=4)
         self.push_direction_var = tk.StringVar(value=self.pose_manager.get_param("push_direction", "LEFT"))
         self.push_combo = ttk.Combobox(frame, textvariable=self.push_direction_var, values=["LEFT", "RIGHT"], width=8, state="readonly")
-        self.push_combo.grid(row=2, column=3, sticky=tk.W, padx=5)
+        self.push_combo.grid(row=2, column=3, sticky=tk.W, padx=4)
 
-        ttk.Label(frame, text="Column Offset (mm):").grid(row=2, column=4, sticky=tk.W, padx=5)
+        ttk.Label(frame, text="Column Offset (mm):").grid(row=2, column=4, sticky=tk.W, padx=4)
         self.column_offset_var = tk.DoubleVar(value=self.pose_manager.get_param("column_offset", 100.0))
-        ttk.Entry(frame, textvariable=self.column_offset_var, width=10).grid(row=2, column=5, sticky=tk.W, padx=5)
+        ttk.Entry(frame, textvariable=self.column_offset_var, width=10).grid(row=2, column=5, sticky=tk.W, padx=4)
 
-        ttk.Button(frame, text="Save Parameters", command=self.on_save_params).grid(row=1, column=4, columnspan=2, sticky=tk.W, padx=5)
+        ttk.Button(frame, text="Save Parameters", command=self.on_save_params).grid(row=1, column=4, columnspan=2, sticky=tk.W, padx=4)
 
     def create_run_frame(self):
         frame = ttk.LabelFrame(self.left_frame, text="Stacking Control (Manual)", padding=10)
-        frame.pack(fill=tk.X, padx=10, pady=5)
-        ttk.Button(frame, text="Start Stacking (Manual)", command=self.on_start_stacking, width=25).pack(side=tk.LEFT, padx=5)
+        frame.pack(fill=tk.X, padx=8, pady=4)
+        ttk.Button(frame, text="Start Stacking (Manual)", command=self.on_start_stacking, width=25).pack(side=tk.LEFT, padx=4)
 
     def create_auto_control_frame(self):
         frame = ttk.LabelFrame(self.left_frame, text="Auto Pick and Place", padding=10)
-        frame.pack(fill=tk.X, padx=10, pady=5)
+        frame.pack(fill=tk.X, padx=8, pady=4)
 
         counter_frame = ttk.Frame(frame)
         counter_frame.pack(fill=tk.X, pady=5)
 
-        ttk.Label(counter_frame, text="Stack Counter:", font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=5)
+        ttk.Label(counter_frame, text="Stack Counter:", font=("Arial", 10, "bold")).pack(side=tk.LEFT, padx=4)
         self.stack_counter_label = ttk.Label(counter_frame, text="0", font=("Arial", 12, "bold"), foreground="blue")
-        self.stack_counter_label.pack(side=tk.LEFT, padx=5)
+        self.stack_counter_label.pack(side=tk.LEFT, padx=4)
 
-        ttk.Button(counter_frame, text="Reset Counter", command=self.on_reset_counter, width=15).pack(side=tk.LEFT, padx=15)
+        ttk.Button(counter_frame, text="Reset Counter", command=self.on_reset_counter, width=12).pack(side=tk.LEFT, padx=15)
 
         ttk.Separator(frame, orient="horizontal").pack(fill=tk.X, pady=10)
 
         loop_frame = ttk.Frame(frame)
         loop_frame.pack(fill=tk.X, pady=5)
 
-        ttk.Label(loop_frame, text="12 Auto Loop:", font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=5)
-        ttk.Label(loop_frame, text="boxes:").pack(side=tk.LEFT, padx=5)
+        ttk.Label(loop_frame, text="12 Auto Loop:", font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=4)
+        ttk.Label(loop_frame, text="boxes:").pack(side=tk.LEFT, padx=4)
         self.auto_boxes_var = tk.IntVar(value=4)
-        ttk.Spinbox(loop_frame, from_=1, to=20, textvariable=self.auto_boxes_var, width=10).pack(side=tk.LEFT, padx=5)
+        ttk.Spinbox(loop_frame, from_=1, to=20, textvariable=self.auto_boxes_var, width=10).pack(side=tk.LEFT, padx=4)
 
-        ttk.Button(loop_frame, text="Start Auto Loop", command=self.on_auto_loop, width=18).pack(side=tk.LEFT, padx=10)
+        ttk.Button(loop_frame, text="Start Auto Loop", command=self.on_auto_loop, width=18).pack(side=tk.LEFT, padx=8)
 
         quick_frame = ttk.Frame(frame)
         quick_frame.pack(fill=tk.X, pady=5)
 
-        ttk.Label(quick_frame, text="13 Quick Start:", font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=5)
-        ttk.Label(quick_frame, text="auto reset + 4 boxes").pack(side=tk.LEFT, padx=5)
-        ttk.Button(quick_frame, text="Quick Start", command=self.on_quick_start, width=18).pack(side=tk.LEFT, padx=10)
+        ttk.Label(quick_frame, text="13 Quick Start:", font=("Arial", 9, "bold")).pack(side=tk.LEFT, padx=4)
+        ttk.Label(quick_frame, text="auto reset + 4 boxes").pack(side=tk.LEFT, padx=4)
+        ttk.Button(quick_frame, text="Quick Start", command=self.on_quick_start, width=18).pack(side=tk.LEFT, padx=8)
 
     def create_output_frame(self):
         # 우측 프레임 - 고정 폭으로 설정
