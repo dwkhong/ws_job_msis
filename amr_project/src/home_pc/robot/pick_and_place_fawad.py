@@ -154,11 +154,16 @@ class SafePickPlace:
         if self.stop_flag:
             return False
         
+        # ✅ 위치 도달 완료 대기 (중요!)
+        if status_callback:
+            status_callback("Waiting for position stabilization...")
+        time.sleep(1.5)  # 로봇이 완전히 정지할 때까지 대기
+        
         # 4. Close gripper
         if status_callback:
             status_callback("Closing gripper...")
         self.gripper.close()
-        time.sleep(0.15)  # ✅ Document 2: 0.15 (Document 1은 0.3)
+        time.sleep(0.5)  # 그리퍼 완전히 닫힐 때까지 대기
         
         if self.stop_flag:
             return False
