@@ -5,13 +5,13 @@ namespace Simtos {
 
 static const char* StateToString(SystemState s) {
     switch (s) {
-        case SystemState::IDLE:                return "IDLE";
+        case SystemState::IDLE:                  return "IDLE";
         case SystemState::ROBOT1_PICK_AND_PLACE: return "ROBOT1_PICK_AND_PLACE";
-        case SystemState::SERVO_ROTATE:        return "SERVO_ROTATE";
-        case SystemState::ROBOT2_INSERT:       return "ROBOT2_INSERT";
-        case SystemState::ROBOT1_RETURN:       return "ROBOT1_RETURN";
-        case SystemState::CYCLE_COMPLETE:      return "CYCLE_COMPLETE";
-        case SystemState::ERROR:               return "ERROR";
+        case SystemState::SERVO_ROTATE:          return "SERVO_ROTATE";
+        case SystemState::ROBOT2_INSERT:         return "ROBOT2_INSERT";
+        case SystemState::ROBOT1_RETURN:         return "ROBOT1_RETURN";
+        case SystemState::CYCLE_COMPLETE:        return "CYCLE_COMPLETE";
+        case SystemState::ERROR:                 return "ERROR";
     }
     return "UNKNOWN";
 }
@@ -28,15 +28,14 @@ bool ConditionController::Robot1_Ready() {
 
 bool ConditionController::ErrorDetected() {
     return !devices_->IsConnected("Pick_Place_Robot") ||
-           !devices_->IsConnected("Endoscope_Robot") ||
-           !devices_->IsConnected("Servo_Motor");
+           !devices_->IsConnected("Endoscope_Robot");
 }
 
 // ========================================
 // ActionController
 // ========================================
-ActionController::ActionController(DeviceManager* devices)
-    : devices_(devices) {}
+ActionController::ActionController(DeviceManager* devices, PlcConnection* plc)
+    : devices_(devices), plc_(plc) {}
 
 bool ActionController::Robot1_PickToServo(int posIndex) {
     std::string cmdKey = "PP_Pos" + std::to_string(posIndex) + "_Pick_To_Servo";
@@ -56,12 +55,27 @@ bool ActionController::Robot1_ServoToPos(int posIndex) {
     return true;
 }
 
-bool ActionController::Servo_Rotate(int posIndex) {
+bool ActionController::Servo_Rotate_Socket(int posIndex) {
     std::string cmdKey = "SERVO_Rotate_" + std::to_string(posIndex);
     auto res = devices_->SendCommand("Servo_Motor", SERVO_COMMANDS.at(cmdKey));
     if (res.result != CommandResult::SUCCESS) return false;
 
-    std::cout << "[Action] Servo rotated to position " << posIndex << std::endl;
+    std::cout << "[Action] Servo(Socket) rotated to position " << posIndex << std::endl;
+    return true;
+}
+
+bool ActionController::Servo_Rotate_PLC(int posIndex) {
+    if (!plc_) return false;
+
+    std::string cmdKey = "SERVO_Rotate_" + std::to_string(posIndex);
+    std::string ackKey = cmdKey + "_Ack";
+
+    if (!plc_->SendAndWaitAck(cmdKey, ackKey)) {
+        std::cerr << "[Action] Servo(PLC) rotation failed at position " << posIndex << std::endl;
+        return false;
+    }
+
+    std::cout << "[Action] Servo(PLC) rotated to position " << posIndex << std::endl;
     return true;
 }
 
@@ -77,10 +91,11 @@ bool ActionController::Robot2_Insert(int posIndex) {
 // ========================================
 // StateMachine
 // ========================================
-StateMachine::StateMachine(DeviceManager& devices)
+StateMachine::StateMachine(DeviceManager& devices, PlcConnection* plc)
     : devices_(devices)
+    , plc_(plc)
     , conditions_(&devices)
-    , actions_(&devices) {}
+    , actions_(&devices, plc) {}
 
 StateMachine::~StateMachine() {
     Stop();
@@ -90,7 +105,8 @@ void StateMachine::Start() {
     if (running_) return;
     running_ = true;
     workerThread_ = std::thread(&StateMachine::Run, this);
-    std::cout << "[StateMachine] Started" << std::endl;
+    std::cout << "[StateMachine] Started (servo via "
+              << (usePlcForServo_ ? "PLC" : "Socket") << ")" << std::endl;
 }
 
 void StateMachine::Stop() {
@@ -119,13 +135,12 @@ void StateMachine::Update() {
         case SystemState::IDLE:
             if (conditions_.Robot1_Ready()) {
                 currentServoPos_ = 0;
-                currentItemPos_ = 1;  // 1번위치부터 시작
+                currentItemPos_ = 1;
                 SetState(SystemState::ROBOT1_PICK_AND_PLACE);
             }
             break;
 
         case SystemState::ROBOT1_PICK_AND_PLACE:
-            // 1번 로봇: currentItemPos_ 위치에서 집어서 서보에 올림
             if (actions_.Robot1_PickToServo(currentItemPos_)) {
                 SetState(SystemState::SERVO_ROTATE);
             } else {
@@ -134,23 +149,24 @@ void StateMachine::Update() {
             break;
 
         case SystemState::SERVO_ROTATE:
-            // 서보: 다음 위치로 회전
             currentServoPos_++;
-            if (actions_.Servo_Rotate(currentServoPos_)) {
-                SetState(SystemState::ROBOT2_INSERT);
-            } else {
-                SetState(SystemState::ERROR);
+            {
+                bool ok = usePlcForServo_
+                    ? actions_.Servo_Rotate_PLC(currentServoPos_)
+                    : actions_.Servo_Rotate_Socket(currentServoPos_);
+                if (ok) {
+                    SetState(SystemState::ROBOT2_INSERT);
+                } else {
+                    SetState(SystemState::ERROR);
+                }
             }
             break;
 
         case SystemState::ROBOT2_INSERT:
-            // 2번 로봇: 현재 서보 위치에서 내시경 삽입
             if (actions_.Robot2_Insert(currentServoPos_)) {
                 if (currentServoPos_ < servoRotationCount_) {
-                    // 아직 남은 위치 있음 -> 서보 다시 회전
                     SetState(SystemState::SERVO_ROTATE);
                 } else {
-                    // 모든 위치 완료 -> 물건 회수
                     SetState(SystemState::ROBOT1_RETURN);
                 }
             } else {
@@ -159,7 +175,6 @@ void StateMachine::Update() {
             break;
 
         case SystemState::ROBOT1_RETURN:
-            // 1번 로봇: 서보에서 집어서 원래 위치에 놓음
             if (actions_.Robot1_ServoToPos(currentItemPos_)) {
                 SetState(SystemState::CYCLE_COMPLETE);
             } else {
@@ -168,9 +183,8 @@ void StateMachine::Update() {
             break;
 
         case SystemState::CYCLE_COMPLETE:
-            std::cout << "[StateMachine] === Cycle complete (item from Pos"
+            std::cout << "[StateMachine] === Cycle complete (Pos"
                       << currentItemPos_ << ") ===" << std::endl;
-            // 다음 아이템 위치로 전환 (1 <-> 2)
             currentItemPos_ = (currentItemPos_ == 1) ? 2 : 1;
             SetState(SystemState::IDLE);
             break;

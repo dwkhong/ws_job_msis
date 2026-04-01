@@ -11,7 +11,7 @@ echo -e "${BLUE}[INFO]${NC} Building SIMTOS Framework..."
 CXX=g++
 CXXFLAGS="-std=c++17 -O2 -Wall"
 INCLUDES="-Iinclude"
-SOURCES="main.cpp src/SocketConnection.cpp src/DeviceManager.cpp src/StateMachine.cpp"
+SOURCES="main.cpp src/SocketConnection.cpp src/DeviceManager.cpp src/PlcConnection.cpp src/StateMachine.cpp"
 OUTPUT="-o simtos_main"
 
 if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
