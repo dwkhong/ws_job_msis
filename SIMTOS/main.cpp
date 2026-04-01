@@ -55,10 +55,12 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // 3) 로봇 연결
-    if (!deviceManager.ConnectAll()) {
-        std::cerr << "[SIMTOS] Not all devices connected." << std::endl;
-        return 1;
+    // 3) 로봇 연결 (연결 가능한 것만 연결)
+    deviceManager.ConnectAll();
+    std::cout << "[SIMTOS] Connected devices:" << std::endl;
+    for (const auto& name : deviceManager.GetDeviceNames()) {
+        std::cout << "  - " << name << ": "
+                  << (deviceManager.IsConnected(name) ? "OK" : "FAIL") << std::endl;
     }
 
     // 4) 스테이트 머신
